@@ -29,7 +29,12 @@ function installMa(): boolean {
   try {
     console.log(`${C.dim}Installing 'ma' command globally...${C.reset}`);
     execSync('npm run build', { cwd: projectRoot, stdio: 'pipe' });
-    execSync('npm link', { cwd: projectRoot, stdio: 'pipe' });
+    try {
+      execSync('npm link', { cwd: projectRoot, stdio: 'pipe' });
+    } catch {
+      console.log(`${C.dim}Retrying with sudo...${C.reset}`);
+      execSync('sudo npm link', { cwd: projectRoot, stdio: 'inherit' });
+    }
     return true;
   } catch (err) {
     console.error(`${C.red}Failed to install: ${(err as Error).message}${C.reset}`);
