@@ -1,4 +1,4 @@
-import { loadConfig, resolveConfigPath } from './config.js';
+import { loadConfigDetailed, resolveConfigPath } from './config.js';
 import { connectMcpServer } from './mcp/client.js';
 import { createAgent } from './agent.js';
 import type { AgentConfig, McpConnection, Agent, McpServerConfig } from './mcp/types.js';
@@ -6,12 +6,14 @@ import type { AgentConfig, McpConnection, Agent, McpServerConfig } from './mcp/t
 export interface BootstrapResult {
   config: AgentConfig;
   configPath: string | null;
+  configSources: string[];
+  createdDefault: boolean;
   connections: McpConnection[];
   agent: Agent;
 }
 
 export async function bootstrap(configPath?: string): Promise<BootstrapResult> {
-  const config = loadConfig(configPath);
+  const { config, sources, createdDefault } = loadConfigDetailed(configPath);
   const resolved = resolveConfigPath(configPath);
 
   const entries = Object.entries(config.mcpServers ?? {}) as Array<[string, McpServerConfig]>;
@@ -28,7 +30,7 @@ export async function bootstrap(configPath?: string): Promise<BootstrapResult> {
 
   const agent = await createAgent(config, connections);
 
-  return { config, configPath: resolved, connections, agent };
+  return { config, configPath: resolved, configSources: sources, createdDefault, connections, agent };
 }
 
 export async function shutdown(connections: McpConnection[]): Promise<void> {
@@ -41,4 +43,4 @@ export async function shutdown(connections: McpConnection[]): Promise<void> {
   }
 }
 
-export { loadConfig, resolveConfigPath } from './config.js';
+export { loadConfig, loadConfigDetailed, resolveConfigPath } from './config.js';

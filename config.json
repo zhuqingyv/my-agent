@@ -1,9 +1,4 @@
 {
-  "model": {
-    "baseURL": "http://localhost:1234/v1",
-    "model": "qwen3-30b-a3b",
-    "apiKey": "lm-studio"
-  },
   "mcpServers": {
     "exec": {
       "command": "tsx",

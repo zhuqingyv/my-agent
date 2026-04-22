@@ -67,11 +67,21 @@ async function runChat(configPath?: string): Promise<void> {
     process.exit(1);
   }
 
-  const { config, configPath: resolved, connections, agent } = boot;
+  const { config, configSources, createdDefault, connections, agent } = boot;
   activeConnections = connections;
 
+  if (createdDefault) {
+    console.log(color(C.yellow, `Created ~/.my-agent/config.json — edit model settings there.`));
+  }
+
   console.log(color(C.bold, 'my-agent') + color(C.dim, ` v${VERSION}`));
-  if (resolved) console.log(color(C.dim, `config: ${resolved}`));
+  const home = process.env.HOME ?? '';
+  const pretty = configSources.map((s) => (home && s.startsWith(home) ? '~' + s.slice(home.length) : s));
+  if (pretty.length > 0) {
+    console.log(color(C.dim, `config: ${pretty.join(' + ')}`));
+  } else {
+    console.log(color(C.dim, `config: (defaults)`));
+  }
   console.log(color(C.dim, `model:  ${config.model.model} @ ${config.model.baseURL}`));
 
   const serverSummary = connections
