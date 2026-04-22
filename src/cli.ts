@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { bootstrap, shutdown } from './index.js';
+import { writeGlobalConfig } from './config.js';
 import type { BootstrapResult } from './index.js';
 import type { Agent, McpConnection } from './mcp/types.js';
 import type { Task } from './task-stack.js';
@@ -205,6 +206,20 @@ async function main(): Promise<void> {
     .option('-c, --config <path>', 'path to config file')
     .action(async (opts: { config?: string }) => {
       await runChat(opts.config);
+    });
+
+  program
+    .command('init')
+    .description('Initialize global config with model settings')
+    .argument('<baseURL>', 'Model API base URL (e.g. http://localhost:1234/v1)')
+    .argument('<model>', 'Model name (e.g. qwen3-30b-a3b)')
+    .argument('[apiKey]', 'API key (default: lm-studio)', 'lm-studio')
+    .action((baseURL: string, model: string, apiKey: string) => {
+      writeGlobalConfig({ baseURL, model, apiKey });
+      console.log(color(C.green, `✓ Saved to ~/.my-agent/config.json`));
+      console.log(color(C.dim, `  baseURL: ${baseURL}`));
+      console.log(color(C.dim, `  model:   ${model}`));
+      console.log(color(C.dim, `  apiKey:  ${apiKey}`));
     });
 
   program

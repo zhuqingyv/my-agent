@@ -62,6 +62,19 @@ function ensureGlobalDefault(): { created: boolean; path: string } {
   return { created: true, path: file };
 }
 
+export function writeGlobalConfig(model: { baseURL: string; model: string; apiKey: string }): void {
+  const dir = globalConfigDir();
+  const file = globalConfigPath();
+  fs.mkdirSync(dir, { recursive: true });
+
+  let existing: Record<string, any> = {};
+  if (fs.existsSync(file)) {
+    try { existing = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { /* overwrite */ }
+  }
+  existing.model = model;
+  fs.writeFileSync(file, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+}
+
 export function loadConfigDetailed(configPath?: string): ConfigLoadResult {
   const sources: string[] = [];
 
