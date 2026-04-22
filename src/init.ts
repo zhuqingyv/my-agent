@@ -62,14 +62,15 @@ async function main() {
   }
 
   const projectRoot = path.resolve(import.meta.dirname, '..');
+  const tsxBin = path.join(projectRoot, 'node_modules', '.bin', 'tsx');
   const execMcp = path.join(projectRoot, 'src', 'mcp-servers', 'exec.ts');
   const fsMcp = path.join(projectRoot, 'src', 'mcp-servers', 'fs.ts');
 
   const config: Record<string, any> = {
     model: { baseURL, model, apiKey },
     mcpServers: {
-      exec: { command: 'tsx', args: [execMcp] },
-      fs: { command: 'tsx', args: [fsMcp] },
+      exec: { command: tsxBin, args: [execMcp] },
+      fs: { command: tsxBin, args: [fsMcp] },
     },
     systemPrompt: 'You are a helpful assistant. You can execute commands and read/write files using the available tools.',
   };
