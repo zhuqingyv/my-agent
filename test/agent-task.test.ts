@@ -55,17 +55,15 @@ test('agent: create_task tool is present in internal tool definition', () => {
   assert.ok(CREATE_TASK_TOOL.function.parameters);
 });
 
-test('agent: renderStackState output format covers current/pending/completed', () => {
+test('agent: renderStackState empty stack returns empty string', () => {
+  const { renderStackState } = __internal__;
+  const stack = createTaskStack();
+  assert.equal(renderStackState(stack), '');
+});
+
+test('agent: renderStackState shows current task without id, no completed section', () => {
   const { renderStackState, STACK_STATE_PREFIX } = __internal__;
   const stack = createTaskStack();
-
-  const empty = renderStackState(stack);
-  assert.ok(empty.startsWith(STACK_STATE_PREFIX));
-  assert.match(empty, /<stack_state>/);
-  assert.match(empty, /Current task: \(none\)/);
-  assert.match(empty, /Pending tasks: \(none\)/);
-  assert.match(empty, /Completed tasks: \(none\)/);
-  assert.match(empty, /<\/stack_state>/);
 
   stack.push({ prompt: 'root', messageAnchor: 0 });
   const root = stack.pop()!;
@@ -73,16 +71,21 @@ test('agent: renderStackState output format covers current/pending/completed', (
   stack.push({ prompt: 'child-b', parentId: root.id, messageAnchor: 0 });
 
   const populated = renderStackState(stack);
-  assert.match(populated, /Current task: \[t_1\] root/);
+  assert.ok(populated.startsWith(STACK_STATE_PREFIX));
+  assert.match(populated, /<stack_state note="内部状态，禁止向用户输出">/);
+  assert.match(populated, /Current task: root/);
   assert.match(populated, /Pending tasks \(top first\)/);
-  assert.match(populated, /\[t_3\] child-b/);
-  assert.match(populated, /\[t_2\] child-a/);
+  assert.match(populated, /child-b/);
+  assert.match(populated, /child-a/);
+  assert.doesNotMatch(populated, /\[t_\d/);
+  assert.doesNotMatch(populated, /Completed tasks/);
+  assert.match(populated, /需要拆分才调 create_task/);
 
   const childB = stack.pop()!;
   stack.markDone(childB.id, 'done-b');
   const populated2 = renderStackState(stack);
-  assert.match(populated2, /Completed tasks \(last 5\)/);
-  assert.match(populated2, /\[t_3\] DONE — "child-b" → done-b/);
+  assert.doesNotMatch(populated2, /Completed tasks/);
+  assert.doesNotMatch(populated2, /done-b/);
 });
 
 test('agent: foldMessages-style splice reduces message length to anchor', () => {

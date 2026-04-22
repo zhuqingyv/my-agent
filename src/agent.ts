@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { encode as toonEncode } from '@toon-format/toon';
 import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -16,24 +17,63 @@ const TOOL_NAME_SEP = '__';
 const DEFAULT_MAX_LOOPS = 20;
 const STACK_STATE_PREFIX = '\n--- STACK_STATE ---\n';
 const CREATE_TASK_TOOL_NAME = 'create_task';
+const TOOL_RESULT_MAX_CHARS = 4000;
+
+function compactToolResult(
+  result: string,
+  maxChars: number = TOOL_RESULT_MAX_CHARS
+): string {
+  let out = result;
+
+  try {
+    const parsed = JSON.parse(out);
+    const hasArrayShape =
+      Array.isArray(parsed) ||
+      (parsed &&
+        typeof parsed === 'object' &&
+        Object.values(parsed).some(Array.isArray));
+    if (hasArrayShape) {
+      try {
+        const toon = toonEncode(parsed);
+        if (typeof toon === 'string' && toon.length < out.length) {
+          out = toon;
+        }
+      } catch {
+        // TOON encode failed, keep JSON
+      }
+    }
+  } catch {
+    // not JSON, keep as-is
+  }
+
+  if (out.length > maxChars) {
+    const headLen = Math.floor(maxChars * 0.75);
+    const tailLen = Math.floor(maxChars * 0.25);
+    const head = out.slice(0, headLen);
+    const tail = out.slice(-tailLen);
+    const dropped = out.length - headLen - tailLen;
+    out = head + `\n\n[...truncated ${dropped} chars...]\n\n` + tail;
+  }
+
+  return out;
+}
 
 const CREATE_TASK_TOOL: ChatCompletionTool = {
   type: 'function',
   function: {
     name: CREATE_TASK_TOOL_NAME,
     description:
-      'Push a new sub-task onto the task stack. The task will execute AFTER the current task completes (LIFO). DO NOT create a task that duplicates one in "Pending tasks" or "Completed tasks".',
+      '把子任务压栈，当前任务完成后再执行。只有复杂任务需要拆分时才调用，简单问答直接回答不要调。不要重复已在栈里的任务。',
     parameters: {
       type: 'object',
       properties: {
         prompt: {
           type: 'string',
-          description:
-            'Full instruction for this sub-task. Include all needed context.',
+          description: '子任务的完整指令，带上所需上下文。',
         },
         reason: {
           type: 'string',
-          description: 'Why this task is needed (1 sentence).',
+          description: '为什么需要拆这个子任务（一句话）。',
         },
       },
       required: ['prompt'],
@@ -143,13 +183,14 @@ function normalizeToolCalls(
 function renderStackState(stack: TaskStack): string {
   const cur = stack.current();
   const pending = stack.pending();
-  const completed = stack.history(5);
 
-  const lines: string[] = ['<stack_state>'];
+  if (!cur && pending.length === 0) return '';
+
+  const lines: string[] = [
+    '<stack_state note="内部状态，禁止向用户输出">',
+  ];
   lines.push(
-    cur
-      ? `Current task: [${cur.id}] ${cur.prompt}`
-      : 'Current task: (none)'
+    cur ? `Current task: ${cur.prompt}` : 'Current task: (none)'
   );
 
   if (pending.length === 0) {
@@ -158,27 +199,12 @@ function renderStackState(stack: TaskStack): string {
     lines.push('Pending tasks (top first):');
     const topFirst = pending.slice().reverse();
     topFirst.forEach((t, i) => {
-      lines.push(`  ${i + 1}. [${t.id}] ${t.prompt}`);
+      lines.push(`  ${i + 1}. ${t.prompt}`);
     });
+    lines.push('Rules:');
+    lines.push('  - 需要拆分才调 create_task，不要重复已在栈里的。');
   }
 
-  if (completed.length === 0) {
-    lines.push('Completed tasks: (none)');
-  } else {
-    lines.push('Completed tasks (last 5):');
-    for (const t of completed) {
-      const tag = t.status === 'done' ? 'DONE' : 'FAILED';
-      const summary = t.result ? ` → ${t.result}` : '';
-      lines.push(`  - [${t.id}] ${tag} — "${t.prompt}"${summary}`);
-    }
-  }
-
-  lines.push('Rules:');
-  lines.push('  - Call create_task to push sub-tasks; they run AFTER current.');
-  lines.push('  - Do NOT duplicate a pending or completed task.');
-  lines.push(
-    '  - When done with current task, reply with your final answer (no tool call).'
-  );
   lines.push('</stack_state>');
   return STACK_STATE_PREFIX + lines.join('\n');
 }
@@ -213,7 +239,7 @@ export async function createAgent(
   const maxLoops = config.maxLoops ?? DEFAULT_MAX_LOOPS;
   const systemPrompt =
     config.systemPrompt ??
-    'You are a helpful CLI agent. Use the provided tools when they help. Keep answers concise.';
+    '你是本地 CLI 助手。有工具就用工具，没工具就直接答。\n\n回答规则（严格遵守）：\n- 一句话回答。能一个词就一个词。\n- 不要客套、不要展望、不要"如果你需要..."。\n- 不要复述任务栈状态，那是内部信息。\n- 没有被问到的信息不要主动汇报。\n- 中文问就用中文答。';
 
   const messages: ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
@@ -235,7 +261,7 @@ export async function createAgent(
     task: Task
   ): AsyncGenerator<string, { text: string; hitMaxLoops: boolean }, unknown> {
     const openingContent = task.parentId
-      ? `[auto] Begin task [${task.id}]: ${task.prompt}`
+      ? `（子任务）${task.prompt}`
       : task.prompt;
     messages.push({ role: 'user', content: openingContent });
 
@@ -243,7 +269,10 @@ export async function createAgent(
 
     for (let loop = 0; loop < maxLoops; loop++) {
       removeLastStackStateMessage(messages);
-      messages.push({ role: 'system', content: renderStackState(stack) });
+      const stateStr = renderStackState(stack);
+      if (stateStr) {
+        messages.push({ role: 'system', content: stateStr });
+      }
 
       const request: Parameters<typeof client.chat.completions.create>[0] = {
         model: config.model.model,
@@ -337,7 +366,7 @@ export async function createAgent(
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: toolResult,
+          content: compactToolResult(toolResult),
         });
       }
     }
@@ -450,6 +479,7 @@ export const __internal__ = {
   normalizeToolCalls,
   renderStackState,
   removeLastStackStateMessage,
+  compactToolResult,
   CREATE_TASK_TOOL,
   STACK_STATE_PREFIX,
 };

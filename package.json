@@ -14,6 +14,7 @@
     "init": "tsx src/init.ts"
   },
   "dependencies": {
+    "@toon-format/toon": "^2.1.0",
     "commander": "^12.1.0",
     "openai": "^4.76.0"
   },

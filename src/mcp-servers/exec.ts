@@ -1,6 +1,45 @@
 #!/usr/bin/env node
-import { exec } from 'node:child_process';
+import { exec, execSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
+
+const RTK_COMMANDS = [
+  'git',
+  'ls',
+  'tree',
+  'find',
+  'grep',
+  'cat',
+  'head',
+  'tail',
+  'npm',
+  'cargo',
+  'pip',
+  'docker',
+  'kubectl',
+  'ps',
+  'df',
+  'du',
+];
+
+function detectRtk(): boolean {
+  try {
+    execSync('which rtk', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const RTK_AVAILABLE = detectRtk();
+
+function wrapWithRtk(command: string): string {
+  if (!RTK_AVAILABLE) return command;
+  const firstWord = command.trim().split(/\s/)[0];
+  if (RTK_COMMANDS.includes(firstWord)) {
+    return `rtk ${command}`;
+  }
+  return command;
+}
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -56,9 +95,11 @@ function runCommand(args: ExecArgs): Promise<{ text: string; isError: boolean }>
     const timeout = typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : 30000;
     const cwd = args.cwd || process.cwd();
 
+    const actualCommand = wrapWithRtk(args.command);
+
     exec(
-      args.command,
-      { cwd, timeout, maxBuffer: 10 * 1024 * 1024, encoding: 'utf8' },
+      actualCommand,
+      { cwd, timeout, maxBuffer: 128 * 1024, encoding: 'utf8' },
       (err, stdout, stderr) => {
         const out = (stdout || '').toString();
         const errOut = (stderr || '').toString();
@@ -158,6 +199,10 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
 }
 
 function main(): void {
+  if (!RTK_AVAILABLE) {
+    logErr('[exec-mcp] rtk not found, running commands without compression');
+  }
+
   const rl = createInterface({ input: process.stdin });
 
   rl.on('line', (line) => {

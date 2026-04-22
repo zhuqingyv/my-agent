@@ -64,7 +64,8 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'list_directory',
-    description: 'List entries under a directory. Set recursive=true to walk subdirectories.',
+    description:
+      'List entries under a directory. Skips node_modules/.git/dist by default. Set recursive=true to walk subdirectories.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -74,11 +75,18 @@ const TOOLS: ToolDefinition[] = [
           description: 'Recurse into subdirectories (default false).',
           default: false,
         },
+        maxEntries: {
+          type: 'number',
+          description: 'Max entries to return (default 200).',
+          default: 200,
+        },
       },
       required: ['path'],
     },
   },
 ];
+
+const IGNORED_DIRS = new Set(['node_modules', '.git', 'dist']);
 
 function send(response: JsonRpcResponse): void {
   process.stdout.write(JSON.stringify(response) + '\n');
@@ -141,11 +149,22 @@ function handleWriteFile(args: Record<string, unknown>) {
   }
 }
 
-function walk(root: string, recursive: boolean): string[] {
+interface WalkResult {
+  lines: string[];
+  truncated: boolean;
+  total: number;
+}
+
+function walk(root: string, recursive: boolean, maxEntries: number): WalkResult {
   const lines: string[] = [];
+  let total = 0;
+  let truncated = false;
+
   const visit = (dir: string) => {
+    if (truncated) return;
     const entries = readdirSync(dir);
     for (const name of entries) {
+      if (truncated) return;
       const full = join(dir, name);
       let st;
       try {
@@ -155,20 +174,36 @@ function walk(root: string, recursive: boolean): string[] {
       }
       const rel = relative(root, full) || name;
       if (st.isDirectory()) {
-        lines.push(`[dir] ${rel}/`);
+        total += 1;
+        if (IGNORED_DIRS.has(name)) {
+          if (lines.length < maxEntries) lines.push(`[dir] ${rel}/ (skipped)`);
+          else truncated = true;
+          continue;
+        }
+        if (lines.length < maxEntries) lines.push(`[dir] ${rel}/`);
+        else {
+          truncated = true;
+          continue;
+        }
         if (recursive) visit(full);
       } else if (st.isFile()) {
-        lines.push(`[file] ${rel}`);
+        total += 1;
+        if (lines.length < maxEntries) lines.push(`[file] ${rel}`);
+        else truncated = true;
       }
     }
   };
   visit(root);
-  return lines;
+  return { lines, truncated, total };
 }
 
 function handleListDirectory(args: Record<string, unknown>) {
   const path = args.path;
   const recursive = args.recursive === true;
+  const maxEntries =
+    typeof args.maxEntries === 'number' && args.maxEntries > 0
+      ? Math.floor(args.maxEntries)
+      : 200;
   if (typeof path !== 'string' || path.length === 0) {
     return textResult('list_directory: "path" must be a non-empty string', true);
   }
@@ -177,7 +212,11 @@ function handleListDirectory(args: Record<string, unknown>) {
     if (!st.isDirectory()) {
       return textResult(`list_directory: not a directory: ${path}`, true);
     }
-    const lines = walk(path, recursive);
+    const { lines, truncated, total } = walk(path, recursive, maxEntries);
+    if (truncated) {
+      const remaining = total - lines.length;
+      lines.push(`[...truncated, ${remaining} more entries]`);
+    }
     return textResult(lines.join('\n'));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
