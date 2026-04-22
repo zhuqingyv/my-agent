@@ -17,31 +17,37 @@ CLI agent tool with local model support and dynamic MCP injection.
 // config.json
 {
   "model": {
-    "baseURL": "http://localhost:11434/v1",
-    "model": "qwen2.5",
-    "apiKey": "ollama"
+    "baseURL": "http://localhost:1234/v1",
+    "model": "qwen3-30b-a3b",
+    "apiKey": "lm-studio"
   },
   "mcpServers": {
     "exec": {
-      "command": "node",
-      "args": ["./mcp-servers/exec.js"]
+      "command": "tsx",
+      "args": ["src/mcp-servers/exec.ts"]
     },
     "fs": {
-      "command": "node",
-      "args": ["./mcp-servers/fs.js"]
+      "command": "tsx",
+      "args": ["src/mcp-servers/fs.ts"]
     }
-  }
+  },
+  "systemPrompt": "You are a helpful assistant. You can execute commands and read/write files using the available tools."
 }
 ```
+
+> Note: `model.model` must match the model name currently loaded in LM Studio. Open LM Studio, check the loaded model's identifier, and update this field accordingly.
 
 ## Usage
 
 ```bash
-# Start interactive chat with default config
-my-agent chat
+# Start interactive chat (uses ./config.json by default)
+npm start
 
-# Specify config file
-my-agent chat --config ./config.json
+# Or run the CLI directly via tsx
+npx tsx src/cli.ts chat
+
+# Specify a custom config file
+npx tsx src/cli.ts chat --config ./config.json
 ```
 
 ## Architecture

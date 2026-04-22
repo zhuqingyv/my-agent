@@ -1,0 +1,18 @@
+{
+  "model": {
+    "baseURL": "http://localhost:1234/v1",
+    "model": "qwen3-30b-a3b",
+    "apiKey": "lm-studio"
+  },
+  "mcpServers": {
+    "exec": {
+      "command": "tsx",
+      "args": ["src/mcp-servers/exec.ts"]
+    },
+    "fs": {
+      "command": "tsx",
+      "args": ["src/mcp-servers/fs.ts"]
+    }
+  },
+  "systemPrompt": "You are a helpful assistant. You can execute commands and read/write files using the available tools."
+}
