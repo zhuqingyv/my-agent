@@ -37,6 +37,12 @@ CLI agent tool with local model support and dynamic MCP injection.
 
 > Note: `model.model` must match the model name currently loaded in LM Studio. Open LM Studio, check the loaded model's identifier, and update this field accordingly.
 
+## Security Notice
+
+> ⚠️ **Warning**
+>
+> This tool gives the LLM direct access to shell commands (exec MCP) and filesystem (fs MCP) with no sandboxing. Only run in trusted environments. Review tool calls before execution in production use cases.
+
 ## Usage
 
 ```bash

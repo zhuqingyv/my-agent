@@ -4,6 +4,9 @@ import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { bootstrap, shutdown } from './index.js';
 import type { BootstrapResult } from './index.js';
+import type { McpConnection } from './mcp/types.js';
+
+let activeConnections: McpConnection[] = [];
 
 const C = {
   reset: '\x1b[0m',
@@ -31,6 +34,7 @@ async function runChat(configPath?: string): Promise<void> {
   }
 
   const { config, configPath: resolved, connections, agent } = boot;
+  activeConnections = connections;
 
   console.log(color(C.bold, 'my-agent') + color(C.dim, ` v${VERSION}`));
   if (resolved) console.log(color(C.dim, `config: ${resolved}`));
@@ -134,7 +138,12 @@ async function main(): Promise<void> {
   await program.parseAsync(process.argv);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error(color(C.red, `[fatal] ${(err as Error).stack ?? (err as Error).message}`));
+  try {
+    await shutdown(activeConnections);
+  } catch {
+    /* ignore shutdown errors during fatal cleanup */
+  }
   process.exit(1);
 });

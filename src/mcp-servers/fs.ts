@@ -271,7 +271,6 @@ function main(): void {
   rl.on('close', () => {
     process.exit(0);
   });
-  log('fs-mcp ready');
 }
 
 main();
