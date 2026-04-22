@@ -4,13 +4,14 @@
   "description": "CLI agent tool with local model support and dynamic MCP injection",
   "type": "module",
   "bin": {
-    "my-agent": "./dist/cli.js"
+    "ma": "./dist/cli.js"
   },
   "scripts": {
     "start": "tsx src/cli.ts",
     "build": "tsc",
     "dev": "tsx watch src/cli.ts",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "init": "tsx src/init.ts"
   },
   "dependencies": {
     "commander": "^12.1.0",
