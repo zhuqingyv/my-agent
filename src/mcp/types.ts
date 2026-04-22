@@ -23,7 +23,11 @@ export interface McpConnection {
   name: string;
   process: ChildProcess;
   tools: McpTool[];
-  call(toolName: string, args: Record<string, any>): Promise<McpCallResult>;
+  call(
+    toolName: string,
+    args: Record<string, any>,
+    signal?: AbortSignal
+  ): Promise<McpCallResult>;
   close(): Promise<void>;
 }
 
@@ -47,7 +51,10 @@ export interface ArchivedMessage {
 }
 
 export interface Agent {
-  chat(userMessage: string): AsyncGenerator<string, void, unknown>;
+  chat(
+    userMessage: string,
+    signal?: AbortSignal
+  ): AsyncGenerator<string, void, unknown>;
   reset(): void;
   getTaskStack(): TaskStack;
   getArchive(taskId: string): ArchivedMessage[] | null;

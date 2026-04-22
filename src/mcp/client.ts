@@ -120,21 +120,53 @@ export class McpClient implements McpConnection {
     this.process.stdin.write(JSON.stringify(obj) + '\n');
   }
 
-  request(method: string, params?: any): Promise<any> {
+  request(method: string, params?: any, signal?: AbortSignal): Promise<any> {
     const id = this.nextId++;
     const req: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
 
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException('aborted', 'AbortError'));
+        return;
+      }
+
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        if (signal && onAbort) signal.removeEventListener('abort', onAbort);
         reject(new Error(`MCP '${this.name}' ${method} timed out after ${REQUEST_TIMEOUT_MS}ms`));
       }, REQUEST_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, timer, method });
+
+      const wrappedResolve = (value: any) => {
+        if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      };
+      const wrappedReject = (err: Error) => {
+        if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+        reject(err);
+      };
+
+      let onAbort: (() => void) | null = null;
+      if (signal) {
+        onAbort = () => {
+          clearTimeout(timer);
+          this.pending.delete(id);
+          reject(new DOMException('aborted', 'AbortError'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+
+      this.pending.set(id, {
+        resolve: wrappedResolve,
+        reject: wrappedReject,
+        timer,
+        method,
+      });
       try {
         this.send(req);
       } catch (err) {
         this.pending.delete(id);
         clearTimeout(timer);
+        if (signal && onAbort) signal.removeEventListener('abort', onAbort);
         reject(err as Error);
       }
     });
@@ -168,11 +200,16 @@ export class McpClient implements McpConnection {
     return this.tools;
   }
 
-  async call(toolName: string, args: Record<string, any>): Promise<McpCallResult> {
-    const result = await this.request('tools/call', {
-      name: toolName,
-      arguments: args ?? {},
-    });
+  async call(
+    toolName: string,
+    args: Record<string, any>,
+    signal?: AbortSignal
+  ): Promise<McpCallResult> {
+    const result = await this.request(
+      'tools/call',
+      { name: toolName, arguments: args ?? {} },
+      signal
+    );
     const contentArr = Array.isArray(result?.content) ? result.content : [];
     const text = contentArr
       .map((c: any) => {

@@ -18,6 +18,8 @@
     "commander": "^12.1.0",
     "figures": "^6.1.0",
     "log-update": "^7.2.0",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
     "openai": "^4.76.0",
     "picocolors": "^1.1.1"
   },

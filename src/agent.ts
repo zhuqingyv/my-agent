@@ -258,7 +258,8 @@ export async function createAgent(
   }
 
   async function* runTask(
-    task: Task
+    task: Task,
+    signal?: AbortSignal
   ): AsyncGenerator<string, { text: string; hitMaxLoops: boolean }, unknown> {
     const openingContent = task.parentId
       ? `（子任务）${task.prompt}`
@@ -283,29 +284,59 @@ export async function createAgent(
         request.tool_choice = 'auto';
       }
 
-      const response = await client.chat.completions.create(request);
-      const choice = (response as any).choices?.[0];
-      if (!choice) {
-        const text = '[agent] model returned no choices';
-        messages.push({ role: 'assistant', content: text });
-        yield text;
-        finalText = text;
-        return { text: finalText, hitMaxLoops: false };
+      const stream = await client.chat.completions.create(
+        { ...request, stream: true },
+        { signal }
+      );
+
+      let contentBuf = '';
+      const toolAcc = new Map<
+        number,
+        { id: string; name: string; argsBuf: string }
+      >();
+
+      for await (const chunk of stream as any) {
+        const delta = chunk?.choices?.[0]?.delta;
+        if (!delta) continue;
+
+        if (typeof delta.content === 'string' && delta.content.length > 0) {
+          contentBuf += delta.content;
+          yield delta.content;
+        }
+
+        if (Array.isArray(delta.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const idx = typeof tc.index === 'number' ? tc.index : 0;
+            let cur = toolAcc.get(idx);
+            if (!cur) {
+              cur = { id: '', name: '', argsBuf: '' };
+              toolAcc.set(idx, cur);
+            }
+            if (tc.id) cur.id = tc.id;
+            if (tc.function?.name) cur.name += tc.function.name;
+            if (tc.function?.arguments) cur.argsBuf += tc.function.arguments;
+          }
+        }
       }
-      const msg = choice.message ?? {};
-      const toolCalls = normalizeToolCalls((msg as any).tool_calls);
+
+      const assembled = [...toolAcc.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([, v]) => ({
+          id: v.id,
+          type: 'function' as const,
+          function: { name: v.name, arguments: v.argsBuf },
+        }));
+      const toolCalls = normalizeToolCalls(assembled);
 
       if (!toolCalls) {
-        const content = typeof msg.content === 'string' ? msg.content : '';
-        messages.push({ role: 'assistant', content });
-        if (content) yield content;
-        finalText = content;
+        messages.push({ role: 'assistant', content: contentBuf });
+        finalText = contentBuf;
         return { text: finalText, hitMaxLoops: false };
       }
 
       messages.push({
         role: 'assistant',
-        content: typeof msg.content === 'string' ? msg.content : '',
+        content: contentBuf,
         tool_calls: toolCalls,
       });
 
@@ -350,7 +381,7 @@ export async function createAgent(
             isError = true;
           } else {
             try {
-              const r = await route.conn.call(route.toolName, args);
+              const r = await route.conn.call(route.toolName, args, signal);
               toolResult = r.content;
               isError = r.isError;
             } catch (err) {
@@ -379,7 +410,8 @@ export async function createAgent(
   }
 
   async function* chat(
-    userMessage: string
+    userMessage: string,
+    signal?: AbortSignal
   ): AsyncGenerator<string, void, unknown> {
     try {
       stack.push({
@@ -392,7 +424,9 @@ export async function createAgent(
       return;
     }
 
-    while (stack.size() > 0) {
+    outer: while (stack.size() > 0) {
+      if (signal?.aborted) break;
+
       const task = stack.pop();
       if (!task) break;
 
@@ -404,9 +438,10 @@ export async function createAgent(
       let hitMaxLoops = false;
       let failed = false;
       let failMessage = '';
+      let aborted = false;
 
       try {
-        const gen = runTask(task);
+        const gen = runTask(task, signal);
         while (true) {
           const { value, done } = await gen.next();
           if (done) {
@@ -418,8 +453,21 @@ export async function createAgent(
           yield value as string;
         }
       } catch (err) {
-        failed = true;
-        failMessage = (err as Error).message;
+        const name = (err as any)?.name;
+        if (signal?.aborted || name === 'AbortError') {
+          aborted = true;
+        } else {
+          failed = true;
+          failMessage = (err as Error).message;
+        }
+      }
+
+      if (aborted) {
+        stack.markFailed(task.id, 'aborted');
+        foldMessages(task.messageAnchor, task.id, 'ABORTED');
+        yield '\n[aborted]\n';
+        stack.abortAll();
+        break outer;
       }
 
       if (failed) {

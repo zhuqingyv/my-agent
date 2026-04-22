@@ -1,15 +1,22 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import * as readline from 'node:readline/promises';
+import * as readlineSync from 'node:readline';
 import { stdin as input, stdout as output } from 'node:process';
 import pc from 'picocolors';
 import figures from 'figures';
 import logUpdate from 'log-update';
+import { marked } from 'marked';
+// @ts-ignore - marked-terminal ships without bundled types
+import { markedTerminal } from 'marked-terminal';
 import { bootstrap, shutdown } from './index.js';
 import { writeGlobalConfig } from './config.js';
 import type { BootstrapResult } from './index.js';
 import type { Agent, McpConnection } from './mcp/types.js';
 import type { Task } from './task-stack.js';
+
+marked.use(markedTerminal() as any);
+readlineSync.emitKeypressEvents(process.stdin);
 
 let activeConnections: McpConnection[] = [];
 let activeThink: ThinkStream | null = null;
@@ -24,6 +31,7 @@ class ThinkStream {
   private lastEvent = '思考中';
   private gotFinal = false;
   private isTTY = process.stdout.isTTY === true;
+  private finalBuf = '';
 
   start(): void {
     this.frame = 0;
@@ -48,15 +56,22 @@ class ThinkStream {
       return;
     }
 
-    const trimmed = chunk.trim();
-    if (!trimmed) return;
+    const check = chunk.trimStart();
 
-    if (trimmed.startsWith('[task]')) {
-      this.onTask(trimmed);
-    } else if (trimmed.startsWith('[tool:ok]') || trimmed.startsWith('[tool:err]')) {
-      this.onToolEnd(trimmed);
-    } else if (trimmed.startsWith('[tool]')) {
-      this.onToolStart(trimmed);
+    if (check.startsWith('[task]')) {
+      const t = chunk.trim();
+      if (t) this.onTask(t);
+    } else if (
+      check.startsWith('[tool:ok]') ||
+      check.startsWith('[tool:err]')
+    ) {
+      const t = chunk.trim();
+      if (t) this.onToolEnd(t);
+    } else if (check.startsWith('[tool]')) {
+      const t = chunk.trim();
+      if (t) this.onToolStart(t);
+    } else if (check.startsWith('[aborted]')) {
+      this.persist(pc.yellow('[aborted]'));
     } else {
       this.onFinal(chunk);
     }
@@ -100,7 +115,25 @@ class ThinkStream {
       logUpdate.clear();
       process.stdout.write('\n');
     }
+    this.finalBuf += chunk;
     process.stdout.write(pc.green(chunk));
+  }
+
+  renderMarkdown(): void {
+    if (!this.finalBuf.trim() || !this.isTTY) return;
+
+    const hasMd = /```|^#{1,6}\s|\*\*|^\s*[-*]\s/m.test(this.finalBuf);
+    if (!hasMd) return;
+
+    try {
+      const totalLines = this.finalBuf.split('\n').length;
+      process.stdout.write(`\x1b[${totalLines}A\x1b[0J`);
+
+      const rendered = marked.parse(this.finalBuf) as string;
+      process.stdout.write(rendered);
+    } catch {
+      /* 渲染失败则保留直出内容 */
+    }
   }
 
   private persist(line: string): void {
@@ -277,17 +310,46 @@ async function runChat(configPath?: string): Promise<void> {
     const think = new ThinkStream();
     activeThink = think;
     think.start();
+
+    const controller = new AbortController();
+    const rawWasOn = process.stdin.isTTY ? process.stdin.isRaw === true : false;
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    const onKeypress = (_: string, key: any): void => {
+      if (key?.name === 'escape' && !controller.signal.aborted) {
+        controller.abort();
+      }
+      if (key?.ctrl && key?.name === 'c') {
+        process.emit('SIGINT');
+      }
+    };
+    process.stdin.on('keypress', onKeypress);
+    process.stdin.resume();
+
     try {
-      for await (const chunk of agent.chat(trimmed)) {
+      for await (const chunk of agent.chat(trimmed, controller.signal)) {
         think.push(chunk);
+        if (controller.signal.aborted) break;
       }
     } catch (err) {
-      think.stop();
-      activeThink = null;
-      console.error(pc.red(`[error] ${(err as Error).message}`));
-      continue;
+      const name = (err as Error).name;
+      if (name !== 'AbortError' && !controller.signal.aborted) {
+        think.stop();
+        process.stdin.off('keypress', onKeypress);
+        if (process.stdin.isTTY) process.stdin.setRawMode(rawWasOn);
+        activeThink = null;
+        console.error(pc.red(`[error] ${(err as Error).message}`));
+        continue;
+      }
+    } finally {
+      process.stdin.off('keypress', onKeypress);
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(rawWasOn);
+      }
     }
     think.stop();
+    think.renderMarkdown();
     activeThink = null;
     if (think.hasFinal()) process.stdout.write('\n');
   }
