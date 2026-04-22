@@ -1,9 +1,7 @@
 import OpenAI from 'openai';
-import { encode as toonEncode } from '@toon-format/toon';
 import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
-  ChatCompletionMessageToolCall,
 } from 'openai/resources/chat/completions';
 import type {
   Agent,
@@ -12,51 +10,22 @@ import type {
   McpConnection,
 } from './mcp/types.js';
 import { createTaskStack, type Task, type TaskStack } from './task-stack.js';
+import type { AgentEvent } from './agent/events.js';
+import {
+  normalizeArguments,
+  ensureToolCallId,
+  normalizeToolCalls,
+} from './agent/normalize.js';
+import { compactToolResult } from './agent/compact.js';
+import {
+  STACK_STATE_PREFIX,
+  renderStackState,
+  removeLastStackStateMessage,
+} from './agent/stack-render.js';
 
 const TOOL_NAME_SEP = '__';
 const DEFAULT_MAX_LOOPS = 20;
-const STACK_STATE_PREFIX = '\n--- STACK_STATE ---\n';
 const CREATE_TASK_TOOL_NAME = 'create_task';
-const TOOL_RESULT_MAX_CHARS = 4000;
-
-function compactToolResult(
-  result: string,
-  maxChars: number = TOOL_RESULT_MAX_CHARS
-): string {
-  let out = result;
-
-  try {
-    const parsed = JSON.parse(out);
-    const hasArrayShape =
-      Array.isArray(parsed) ||
-      (parsed &&
-        typeof parsed === 'object' &&
-        Object.values(parsed).some(Array.isArray));
-    if (hasArrayShape) {
-      try {
-        const toon = toonEncode(parsed);
-        if (typeof toon === 'string' && toon.length < out.length) {
-          out = toon;
-        }
-      } catch {
-        // TOON encode failed, keep JSON
-      }
-    }
-  } catch {
-    // not JSON, keep as-is
-  }
-
-  if (out.length > maxChars) {
-    const headLen = Math.floor(maxChars * 0.75);
-    const tailLen = Math.floor(maxChars * 0.25);
-    const head = out.slice(0, headLen);
-    const tail = out.slice(-tailLen);
-    const dropped = out.length - headLen - tailLen;
-    out = head + `\n\n[...truncated ${dropped} chars...]\n\n` + tail;
-  }
-
-  return out;
-}
 
 const CREATE_TASK_TOOL: ChatCompletionTool = {
   type: 'function',
@@ -81,6 +50,55 @@ const CREATE_TASK_TOOL: ChatCompletionTool = {
     },
   },
 };
+
+interface BuiltinToolContext {
+  stack: TaskStack;
+  currentTask: Task;
+}
+
+interface BuiltinTool {
+  definition: ChatCompletionTool;
+  handler: (
+    args: Record<string, any>,
+    ctx: BuiltinToolContext
+  ) => { content: string; isError: boolean };
+}
+
+const builtinTools = new Map<string, BuiltinTool>();
+
+builtinTools.set(CREATE_TASK_TOOL_NAME, {
+  definition: CREATE_TASK_TOOL,
+  handler: (args, ctx) => {
+    const promptArg =
+      typeof args.prompt === 'string' ? args.prompt.trim() : '';
+    const reasonArg =
+      typeof args.reason === 'string' ? args.reason : undefined;
+    if (!promptArg) {
+      return {
+        content: 'Error: create_task requires a non-empty "prompt"',
+        isError: true,
+      };
+    }
+    try {
+      const newTask = ctx.stack.push({
+        prompt: promptArg,
+        reason: reasonArg,
+        parentId: ctx.currentTask.id,
+        messageAnchor: -1,
+      });
+      return {
+        content: JSON.stringify({
+          ok: true,
+          taskId: newTask.id,
+          stackSize: ctx.stack.size(),
+        }),
+        isError: false,
+      };
+    } catch (err) {
+      return { content: `Error: ${(err as Error).message}`, isError: true };
+    }
+  },
+});
 
 function mcpToolsToOpenAI(connections: McpConnection[]): ChatCompletionTool[] {
   const out: ChatCompletionTool[] = [];
@@ -116,115 +134,6 @@ function routeToolCall(
   return { conn, toolName };
 }
 
-function tryExtractJsonObject(text: string): Record<string, any> | null {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) return null;
-  const candidate = text.slice(start, end + 1);
-  try {
-    const parsed = JSON.parse(candidate);
-    return typeof parsed === 'object' && parsed !== null ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function isPlainObject(v: unknown): v is Record<string, any> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
-function normalizeArguments(raw: unknown): Record<string, any> {
-  if (raw == null) return {};
-  if (isPlainObject(raw)) return raw;
-  if (typeof raw !== 'string') return {};
-  const s = raw.trim();
-  if (!s) return {};
-  try {
-    const parsed = JSON.parse(s);
-    return isPlainObject(parsed) ? parsed : {};
-  } catch {
-    const extracted = tryExtractJsonObject(s);
-    return extracted ?? {};
-  }
-}
-
-let callIdCounter = 0;
-function ensureToolCallId(id: string | undefined | null): string {
-  if (id && typeof id === 'string' && id.trim()) return id;
-  callIdCounter += 1;
-  return `call_${Date.now().toString(36)}_${callIdCounter}`;
-}
-
-function normalizeToolCalls(
-  rawCalls: unknown
-): ChatCompletionMessageToolCall[] | null {
-  if (!Array.isArray(rawCalls) || rawCalls.length === 0) return null;
-  const out: ChatCompletionMessageToolCall[] = [];
-  for (const call of rawCalls) {
-    if (!call || typeof call !== 'object') continue;
-    const c = call as any;
-    const fn = c.function;
-    if (!fn || typeof fn.name !== 'string' || !fn.name) continue;
-    out.push({
-      id: ensureToolCallId(c.id),
-      type: 'function',
-      function: {
-        name: fn.name,
-        arguments:
-          typeof fn.arguments === 'string'
-            ? fn.arguments
-            : JSON.stringify(fn.arguments ?? {}),
-      },
-    });
-  }
-  return out.length > 0 ? out : null;
-}
-
-function renderStackState(stack: TaskStack): string {
-  const cur = stack.current();
-  const pending = stack.pending();
-
-  if (!cur && pending.length === 0) return '';
-
-  const lines: string[] = [
-    '<stack_state note="内部状态，禁止向用户输出">',
-  ];
-  lines.push(
-    cur ? `Current task: ${cur.prompt}` : 'Current task: (none)'
-  );
-
-  if (pending.length === 0) {
-    lines.push('Pending tasks: (none)');
-  } else {
-    lines.push('Pending tasks (top first):');
-    const topFirst = pending.slice().reverse();
-    topFirst.forEach((t, i) => {
-      lines.push(`  ${i + 1}. ${t.prompt}`);
-    });
-    lines.push('Rules:');
-    lines.push('  - 需要拆分才调 create_task，不要重复已在栈里的。');
-  }
-
-  lines.push('</stack_state>');
-  return STACK_STATE_PREFIX + lines.join('\n');
-}
-
-function removeLastStackStateMessage(
-  messages: ChatCompletionMessageParam[]
-): void {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (
-      m.role === 'system' &&
-      typeof m.content === 'string' &&
-      m.content.startsWith(STACK_STATE_PREFIX)
-    ) {
-      messages.splice(i, 1);
-      return;
-    }
-  }
-}
-
 export async function createAgent(
   config: AgentConfig,
   connections: McpConnection[]
@@ -235,7 +144,10 @@ export async function createAgent(
   });
 
   const mcpTools = mcpToolsToOpenAI(connections);
-  const tools: ChatCompletionTool[] = [...mcpTools, CREATE_TASK_TOOL];
+  const tools: ChatCompletionTool[] = [
+    ...mcpTools,
+    ...[...builtinTools.values()].map((b) => b.definition),
+  ];
   const maxLoops = config.maxLoops ?? DEFAULT_MAX_LOOPS;
   const systemPrompt =
     config.systemPrompt ??
@@ -260,7 +172,7 @@ export async function createAgent(
   async function* runTask(
     task: Task,
     signal?: AbortSignal
-  ): AsyncGenerator<string, { text: string; hitMaxLoops: boolean }, unknown> {
+  ): AsyncGenerator<AgentEvent, { text: string; hitMaxLoops: boolean }, unknown> {
     const openingContent = task.parentId
       ? `（子任务）${task.prompt}`
       : task.prompt;
@@ -301,7 +213,7 @@ export async function createAgent(
 
         if (typeof delta.content === 'string' && delta.content.length > 0) {
           contentBuf += delta.content;
-          yield delta.content;
+          yield { type: 'token', text: delta.content };
         }
 
         if (Array.isArray(delta.tool_calls)) {
@@ -343,37 +255,16 @@ export async function createAgent(
       for (const tc of toolCalls) {
         const fullName = tc.function.name;
         const args = normalizeArguments(tc.function.arguments);
-        yield `\n[tool] ${fullName} ${JSON.stringify(args)}\n`;
+        yield { type: 'tool:call', name: fullName, args };
 
         let toolResult: string;
         let isError = false;
 
-        if (fullName === CREATE_TASK_TOOL_NAME) {
-          const promptArg =
-            typeof args.prompt === 'string' ? args.prompt.trim() : '';
-          const reasonArg =
-            typeof args.reason === 'string' ? args.reason : undefined;
-          if (!promptArg) {
-            toolResult = 'Error: create_task requires a non-empty "prompt"';
-            isError = true;
-          } else {
-            try {
-              const newTask = stack.push({
-                prompt: promptArg,
-                reason: reasonArg,
-                parentId: task.id,
-                messageAnchor: -1,
-              });
-              toolResult = JSON.stringify({
-                ok: true,
-                taskId: newTask.id,
-                stackSize: stack.size(),
-              });
-            } catch (err) {
-              toolResult = `Error: ${(err as Error).message}`;
-              isError = true;
-            }
-          }
+        const builtin = builtinTools.get(fullName);
+        if (builtin) {
+          const r = builtin.handler(args, { stack, currentTask: task });
+          toolResult = r.content;
+          isError = r.isError;
         } else {
           const route = routeToolCall(connections, fullName);
           if (!route) {
@@ -393,7 +284,7 @@ export async function createAgent(
 
         const short =
           toolResult.length > 400 ? toolResult.slice(0, 400) + '...' : toolResult;
-        yield `[tool:${isError ? 'err' : 'ok'}] ${short}\n`;
+        yield { type: 'tool:result', ok: !isError, content: short };
         messages.push({
           role: 'tool',
           tool_call_id: tc.id,
@@ -404,7 +295,7 @@ export async function createAgent(
 
     const stop = `[agent] task [${task.id}] reached max loop count (${maxLoops}), aborting`;
     messages.push({ role: 'assistant', content: stop });
-    yield stop;
+    yield { type: 'text', content: stop };
     finalText = stop;
     return { text: finalText, hitMaxLoops: true };
   }
@@ -412,15 +303,17 @@ export async function createAgent(
   async function* chat(
     userMessage: string,
     signal?: AbortSignal
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<AgentEvent, void, unknown> {
     try {
       stack.push({
         prompt: userMessage,
         messageAnchor: -1,
       });
     } catch (err) {
-      const text = `[agent] failed to push root task: ${(err as Error).message}`;
-      yield text;
+      yield {
+        type: 'text',
+        content: `[agent] failed to push root task: ${(err as Error).message}`,
+      };
       return;
     }
 
@@ -432,7 +325,7 @@ export async function createAgent(
 
       task.messageAnchor = messages.length;
 
-      yield `[task] → [${task.id}] ${task.prompt.slice(0, 80)}\n`;
+      yield { type: 'task:start', taskId: task.id, prompt: task.prompt };
 
       let taskText = '';
       let hitMaxLoops = false;
@@ -450,7 +343,7 @@ export async function createAgent(
             hitMaxLoops = result.hitMaxLoops === true;
             break;
           }
-          yield value as string;
+          yield value as AgentEvent;
         }
       } catch (err) {
         const name = (err as any)?.name;
@@ -465,7 +358,8 @@ export async function createAgent(
       if (aborted) {
         stack.markFailed(task.id, 'aborted');
         foldMessages(task.messageAnchor, task.id, 'ABORTED');
-        yield '\n[aborted]\n';
+        yield { type: 'task:aborted', taskId: task.id };
+        yield { type: 'aborted' };
         stack.abortAll();
         break outer;
       }
@@ -477,18 +371,20 @@ export async function createAgent(
           task.id,
           `FAILED: ${failMessage}`.slice(0, 500)
         );
-        yield `[task] x [${task.id}] failed: ${failMessage}\n`;
+        yield { type: 'task:failed', taskId: task.id, error: failMessage };
       } else if (hitMaxLoops) {
         stack.markFailed(task.id, taskText);
         foldMessages(task.messageAnchor, task.id, taskText);
-        yield `[task] x [${task.id}] max loops\n`;
+        yield { type: 'task:failed', taskId: task.id, error: 'max loops' };
       } else {
         stack.markDone(task.id, taskText);
         foldMessages(task.messageAnchor, task.id, taskText || '(no output)');
         const next = stack.peek();
-        yield next
-          ? `[task] ok [${task.id}] → next: [${next.id}]\n`
-          : `[task] ok [${task.id}] → (stack empty)\n`;
+        yield {
+          type: 'task:done',
+          taskId: task.id,
+          next: next ? next.id : undefined,
+        };
       }
     }
 

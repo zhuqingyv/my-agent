@@ -68,8 +68,8 @@ async function main() {
 
   const projectRoot = path.resolve(import.meta.dirname, '..');
   const tsxBin = path.join(projectRoot, 'node_modules', '.bin', 'tsx');
-  const execMcp = path.join(projectRoot, 'src', 'mcp-servers', 'exec.ts');
-  const fsMcp = path.join(projectRoot, 'src', 'mcp-servers', 'fs.ts');
+  const execMcp = path.join(projectRoot, 'servers', 'exec-mcp.ts');
+  const fsMcp = path.join(projectRoot, 'servers', 'fs-mcp.ts');
 
   const config: Record<string, any> = {
     model: { baseURL, model, apiKey },

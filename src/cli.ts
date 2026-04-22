@@ -14,6 +14,7 @@ import { writeGlobalConfig } from './config.js';
 import type { BootstrapResult } from './index.js';
 import type { Agent, McpConnection } from './mcp/types.js';
 import type { Task } from './task-stack.js';
+import type { AgentEvent } from './agent/events.js';
 
 marked.use(markedTerminal() as any);
 readlineSync.emitKeypressEvents(process.stdin);
@@ -29,14 +30,17 @@ class ThinkStream {
   private frame = 0;
   private timer: NodeJS.Timeout | null = null;
   private lastEvent = '思考中';
+  private lastToolName = '';
   private gotFinal = false;
   private isTTY = process.stdout.isTTY === true;
   private finalBuf = '';
+  private startTime = 0;
 
   start(): void {
     this.frame = 0;
     this.lastEvent = '思考中';
     this.gotFinal = false;
+    this.startTime = Date.now();
     if (!this.isTTY) return;
     this.timer = setInterval(() => {
       this.frame = (this.frame + 1) % FRAMES.length;
@@ -44,69 +48,70 @@ class ThinkStream {
     }, 80);
   }
 
+  private elapsed(): string {
+    const s = Math.floor((Date.now() - this.startTime) / 1000);
+    return `${s}s`;
+  }
+
   private render(): void {
     if (this.gotFinal || !this.isTTY) return;
     const spin = pc.cyan(FRAMES[this.frame]);
-    logUpdate(`${spin} ${pc.dim(this.lastEvent)}`);
+    logUpdate(`${spin} ${pc.dim(this.lastEvent)} ${pc.dim(`(${this.elapsed()})`)}`);
   }
 
-  push(chunk: string): void {
+  getElapsed(): string {
+    return this.elapsed();
+  }
+
+  push(event: AgentEvent): void {
     if (!this.isTTY) {
-      process.stdout.write(chunk);
+      if (event.type === 'token') process.stdout.write(event.text);
+      else if (event.type === 'text') process.stdout.write(event.content);
+      else if (event.type === 'tool:call') process.stdout.write(`[tool] ${event.name}\n`);
+      else if (event.type === 'tool:result') process.stdout.write(`[tool:${event.ok ? 'ok' : 'err'}] ${event.content.split('\n')[0].slice(0, 80)}\n`);
       return;
     }
 
-    const check = chunk.trimStart();
-
-    if (check.startsWith('[task]')) {
-      const t = chunk.trim();
-      if (t) this.onTask(t);
-    } else if (
-      check.startsWith('[tool:ok]') ||
-      check.startsWith('[tool:err]')
-    ) {
-      const t = chunk.trim();
-      if (t) this.onToolEnd(t);
-    } else if (check.startsWith('[tool]')) {
-      const t = chunk.trim();
-      if (t) this.onToolStart(t);
-    } else if (check.startsWith('[aborted]')) {
-      this.persist(pc.yellow('[aborted]'));
-    } else {
-      this.onFinal(chunk);
+    switch (event.type) {
+      case 'task:start':
+        this.lastEvent = event.prompt.slice(0, 60) || '执行任务';
+        break;
+      case 'task:done':
+        this.persist(pc.green(figures.tick) + ' ' + pc.dim('任务完成'));
+        break;
+      case 'task:failed':
+        this.persist(pc.red(figures.cross) + ' ' + pc.dim(event.error.slice(0, 50) || '任务失败'));
+        break;
+      case 'task:aborted':
+      case 'aborted':
+        this.persist(pc.yellow(figures.warning + ' 已中断'));
+        break;
+      case 'tool:call':
+        this.lastToolName = event.name.replace('__', ' → ');
+        this.lastEvent = `调用 ${this.lastToolName}`;
+        break;
+      case 'tool:result':
+        if (event.ok) {
+          this.persist(pc.green(figures.tick) + ' ' + pc.dim(this.lastToolName || '完成'));
+          this.lastEvent = '分析结果中';
+        } else {
+          const preview = event.content.split('\n')[0].slice(0, 50);
+          this.persist(pc.red(figures.cross) + ' ' + pc.dim(preview || '失败'));
+          this.lastEvent = '处理错误中';
+        }
+        break;
+      case 'token':
+        this.onFinal(event.text);
+        break;
+      case 'text':
+        this.onFinal(event.content);
+        break;
     }
   }
 
-  private onTask(c: string): void {
-    if (c.includes('✓') || /\bok\b/.test(c)) {
-      this.persist(pc.green(figures.tick) + ' ' + pc.dim('任务完成'));
-    } else if (c.includes('✗') || c.includes('x [')) {
-      this.persist(pc.red(figures.cross) + ' ' + pc.dim('任务失败'));
-    } else if (c.includes('→')) {
-      const prompt = c.replace(/\[task\]\s*→\s*(\[[^\]]*\]\s*)?/, '').trim();
-      this.lastEvent = prompt.slice(0, 60) || '执行任务';
-    }
-  }
-
-  private onToolStart(c: string): void {
-    const match = c.match(/\[tool\]\s+(\S+)/);
-    if (match) {
-      const name = match[1].replace('__', ' → ');
-      this.lastEvent = `调用 ${name}`;
-    }
-  }
-
-  private onToolEnd(c: string): void {
-    const ok = c.startsWith('[tool:ok]');
-    if (ok) {
-      this.lastEvent = '分析结果中';
-    } else {
-      const content = c.replace(/\[tool:(ok|err)\]\s*/, '').trim();
-      const preview = content.split('\n')[0].slice(0, 50);
-      this.persist(pc.red(figures.cross) + ' ' + pc.dim(preview || '失败'));
-      this.lastEvent = '处理错误中';
-    }
-  }
+  private inCodeBlock = false;
+  private lineBuf = '';
+  private lastLineEmpty = false;
 
   private onFinal(chunk: string): void {
     if (!this.gotFinal) {
@@ -116,24 +121,47 @@ class ThinkStream {
       process.stdout.write('\n');
     }
     this.finalBuf += chunk;
-    process.stdout.write(pc.green(chunk));
+
+    this.lineBuf += chunk;
+    const lines = this.lineBuf.split('\n');
+    this.lineBuf = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const isEmpty = line.trim() === '';
+      if (isEmpty && this.lastLineEmpty && !this.inCodeBlock) continue;
+      this.lastLineEmpty = isEmpty;
+      process.stdout.write(this.formatLine(line) + '\n');
+    }
   }
 
-  renderMarkdown(): void {
-    if (!this.finalBuf.trim() || !this.isTTY) return;
-
-    const hasMd = /```|^#{1,6}\s|\*\*|^\s*[-*]\s/m.test(this.finalBuf);
-    if (!hasMd) return;
-
-    try {
-      const totalLines = this.finalBuf.split('\n').length;
-      process.stdout.write(`\x1b[${totalLines}A\x1b[0J`);
-
-      const rendered = marked.parse(this.finalBuf) as string;
-      process.stdout.write(rendered);
-    } catch {
-      /* 渲染失败则保留直出内容 */
+  flushLine(): void {
+    if (this.lineBuf) {
+      process.stdout.write(this.formatLine(this.lineBuf));
+      this.lineBuf = '';
     }
+  }
+
+  private formatLine(line: string): string {
+    if (line.startsWith('```')) {
+      this.inCodeBlock = !this.inCodeBlock;
+      return pc.dim('  ' + line);
+    }
+    if (this.inCodeBlock) {
+      return pc.cyan('  ' + line);
+    }
+    if (/^#{1,6}\s/.test(line)) {
+      return '\n' + pc.bold(line.replace(/^#+\s*/, ''));
+    }
+    if (/^\s*[-*]\s/.test(line)) {
+      let out = line.replace(/^(\s*)[-*]\s/, '$1• ');
+      out = out.replace(/\*\*(.+?)\*\*/g, (_, t) => pc.bold(t));
+      out = out.replace(/`([^`]+)`/g, (_, t) => pc.cyan(t));
+      return out;
+    }
+    let out = line;
+    out = out.replace(/\*\*(.+?)\*\*/g, (_, t) => pc.bold(t));
+    out = out.replace(/`([^`]+)`/g, (_, t) => pc.cyan(t));
+    return out;
   }
 
   private persist(line: string): void {
@@ -196,6 +224,77 @@ function printStack(agent: Agent): void {
   }
 }
 
+interface CliCommandContext {
+  agent: Agent;
+  connections: McpConnection[];
+  rl: readline.Interface;
+}
+
+interface CliCommand {
+  description: string;
+  handler: (args: string, ctx: CliCommandContext) => Promise<void> | void;
+}
+
+const commands = new Map<string, CliCommand>();
+
+commands.set('/tools', {
+  description: 'List available tools',
+  handler: (_args, ctx) => {
+    for (const conn of ctx.connections) {
+      console.log(pc.bold(conn.name) + pc.dim(`  (${conn.tools.length} tools)`));
+      for (const t of conn.tools) {
+        const desc = t.description ? ` — ${t.description}` : '';
+        console.log(pc.dim(`  - ${t.name}${desc}`));
+      }
+    }
+  },
+});
+
+commands.set('/clear', {
+  description: 'Clear conversation',
+  handler: (_args, ctx) => {
+    ctx.agent.reset();
+    console.log(pc.dim('[cleared]'));
+  },
+});
+
+commands.set('/stack', {
+  description: 'Show task stack',
+  handler: (_args, ctx) => printStack(ctx.agent),
+});
+
+commands.set('/abort', {
+  description: 'Clear pending tasks',
+  handler: (_args, ctx) => {
+    const n = ctx.agent.abortAll();
+    console.log(pc.dim(`Aborted ${n} pending tasks`));
+  },
+});
+
+commands.set('/archive', {
+  description: 'Show task archive',
+  handler: (args, ctx) => {
+    const id = args.trim();
+    if (!id) {
+      console.log(pc.dim('usage: /archive <id>'));
+      return;
+    }
+    const archive = ctx.agent.getArchive(id);
+    if (!archive) {
+      console.log(pc.dim(`No archive for task ${id}`));
+    } else {
+      console.log(pc.bold(`archive ${id}`));
+      console.log(JSON.stringify(archive, null, 2));
+    }
+  },
+});
+
+function formatCommandsBanner(): string {
+  const names = ['/quit', ...commands.keys()];
+  const withArchiveArg = names.map((n) => (n === '/archive' ? '/archive <id>' : n));
+  return withArchiveArg.join(' ');
+}
+
 async function runChat(configPath?: string): Promise<void> {
   let boot: BootstrapResult;
   try {
@@ -226,7 +325,7 @@ async function runChat(configPath?: string): Promise<void> {
     .map((c) => `${c.name}(${c.tools.length})`)
     .join(', ') || '(none)';
   console.log(pc.dim(`mcp:    ${serverSummary}`));
-  console.log(pc.dim(`commands: /quit /tools /clear /stack /abort /archive <id>`));
+  console.log(pc.dim(`commands: ${formatCommandsBanner()}`));
   console.log('');
 
   const rl = readline.createInterface({ input, output });
@@ -264,46 +363,14 @@ async function runChat(configPath?: string): Promise<void> {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    if (trimmed === '/quit' || trimmed === '/exit') {
-      break;
-    }
-    if (trimmed === '/tools') {
-      for (const conn of connections) {
-        console.log(pc.bold(conn.name) + pc.dim(`  (${conn.tools.length} tools)`));
-        for (const t of conn.tools) {
-          const desc = t.description ? ` — ${t.description}` : '';
-          console.log(pc.dim(`  - ${t.name}${desc}`));
-        }
-      }
-      continue;
-    }
-    if (trimmed === '/clear') {
-      agent.reset();
-      console.log(pc.dim('[cleared]'));
-      continue;
-    }
-    if (trimmed === '/stack') {
-      printStack(agent);
-      continue;
-    }
-    if (trimmed === '/abort') {
-      const n = agent.abortAll();
-      console.log(pc.dim(`Aborted ${n} pending tasks`));
-      continue;
-    }
-    if (trimmed.startsWith('/archive')) {
-      const id = trimmed.slice('/archive'.length).trim();
-      if (!id) {
-        console.log(pc.dim('usage: /archive <id>'));
-        continue;
-      }
-      const archive = agent.getArchive(id);
-      if (!archive) {
-        console.log(pc.dim(`No archive for task ${id}`));
-      } else {
-        console.log(pc.bold(`archive ${id}`));
-        console.log(JSON.stringify(archive, null, 2));
-      }
+    const spaceIdx = trimmed.indexOf(' ');
+    const cmdName = spaceIdx > 0 ? trimmed.slice(0, spaceIdx) : trimmed;
+    const cmdArgs = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : '';
+
+    if (cmdName === '/quit' || cmdName === '/exit') break;
+    const cmd = commands.get(cmdName);
+    if (cmd) {
+      await cmd.handler(cmdArgs, { agent, connections, rl });
       continue;
     }
 
@@ -349,9 +416,13 @@ async function runChat(configPath?: string): Promise<void> {
       }
     }
     think.stop();
-    think.renderMarkdown();
     activeThink = null;
-    if (think.hasFinal()) process.stdout.write('\n');
+    if (think.hasFinal()) {
+      think.flushLine();
+      process.stdout.write('\n');
+    }
+    process.stdout.write('\n' + pc.dim(`✱ 完成 (${think.getElapsed()})`) + '\n');
+    process.stdout.write(pc.dim('─'.repeat(Math.min(process.stdout.columns || 80, 80))) + '\n\n');
   }
 
   await cleanup(0);

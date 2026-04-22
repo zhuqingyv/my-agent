@@ -4,7 +4,7 @@
   "description": "CLI agent tool with local model support and dynamic MCP injection",
   "type": "module",
   "bin": {
-    "ma": "./dist/cli.js"
+    "ma": "./dist/src/cli.js"
   },
   "scripts": {
     "start": "tsx src/cli.ts",
