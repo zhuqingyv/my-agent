@@ -2,6 +2,9 @@
 import { Command } from 'commander';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import pc from 'picocolors';
+import figures from 'figures';
+import logUpdate from 'log-update';
 import { bootstrap, shutdown } from './index.js';
 import { writeGlobalConfig } from './config.js';
 import type { BootstrapResult } from './index.js';
@@ -9,22 +12,123 @@ import type { Agent, McpConnection } from './mcp/types.js';
 import type { Task } from './task-stack.js';
 
 let activeConnections: McpConnection[] = [];
-
-const C = {
-  reset: '\x1b[0m',
-  dim: '\x1b[2m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  yellow: '\x1b[33m',
-  cyan: '\x1b[36m',
-  bold: '\x1b[1m',
-};
-
-function color(code: string, text: string): string {
-  return `${code}${text}${C.reset}`;
-}
+let activeThink: ThinkStream | null = null;
 
 const VERSION = '1.0.0';
+
+const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+class ThinkStream {
+  private frame = 0;
+  private timer: NodeJS.Timeout | null = null;
+  private lastEvent = '思考中';
+  private gotFinal = false;
+  private isTTY = process.stdout.isTTY === true;
+
+  start(): void {
+    this.frame = 0;
+    this.lastEvent = '思考中';
+    this.gotFinal = false;
+    if (!this.isTTY) return;
+    this.timer = setInterval(() => {
+      this.frame = (this.frame + 1) % FRAMES.length;
+      this.render();
+    }, 80);
+  }
+
+  private render(): void {
+    if (this.gotFinal || !this.isTTY) return;
+    const spin = pc.cyan(FRAMES[this.frame]);
+    logUpdate(`${spin} ${pc.dim(this.lastEvent)}`);
+  }
+
+  push(chunk: string): void {
+    if (!this.isTTY) {
+      process.stdout.write(chunk);
+      return;
+    }
+
+    const trimmed = chunk.trim();
+    if (!trimmed) return;
+
+    if (trimmed.startsWith('[task]')) {
+      this.onTask(trimmed);
+    } else if (trimmed.startsWith('[tool:ok]') || trimmed.startsWith('[tool:err]')) {
+      this.onToolEnd(trimmed);
+    } else if (trimmed.startsWith('[tool]')) {
+      this.onToolStart(trimmed);
+    } else {
+      this.onFinal(chunk);
+    }
+  }
+
+  private onTask(c: string): void {
+    if (c.includes('✓') || /\bok\b/.test(c)) {
+      this.persist(pc.green(figures.tick) + ' ' + pc.dim('任务完成'));
+    } else if (c.includes('✗') || c.includes('x [')) {
+      this.persist(pc.red(figures.cross) + ' ' + pc.dim('任务失败'));
+    } else if (c.includes('→')) {
+      const prompt = c.replace(/\[task\]\s*→\s*(\[[^\]]*\]\s*)?/, '').trim();
+      this.lastEvent = prompt.slice(0, 60) || '执行任务';
+    }
+  }
+
+  private onToolStart(c: string): void {
+    const match = c.match(/\[tool\]\s+(\S+)/);
+    if (match) {
+      const name = match[1].replace('__', ' → ');
+      this.lastEvent = `调用 ${name}`;
+    }
+  }
+
+  private onToolEnd(c: string): void {
+    const ok = c.startsWith('[tool:ok]');
+    const content = c.replace(/\[tool:(ok|err)\]\s*/, '').trim();
+    const preview = content.split('\n')[0].slice(0, 50);
+    if (ok) {
+      this.persist(pc.green(figures.tick) + ' ' + pc.dim(preview || '完成'));
+    } else {
+      this.persist(pc.red(figures.cross) + ' ' + pc.dim(preview || '失败'));
+    }
+    this.lastEvent = '分析结果中';
+  }
+
+  private onFinal(chunk: string): void {
+    if (!this.gotFinal) {
+      this.gotFinal = true;
+      this.stopTimer();
+      logUpdate.clear();
+      process.stdout.write('\n');
+    }
+    process.stdout.write(pc.green(chunk));
+  }
+
+  private persist(line: string): void {
+    logUpdate.clear();
+    console.log(line);
+    if (!this.gotFinal) this.render();
+  }
+
+  private stopTimer(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  stop(): void {
+    this.stopTimer();
+    if (!this.isTTY) return;
+    if (!this.gotFinal) {
+      logUpdate.clear();
+    }
+    logUpdate.done();
+  }
+
+  hasFinal(): boolean {
+    return this.gotFinal;
+  }
+}
 
 function fmtTask(t: Task): string {
   return `${t.id}  ${t.prompt}`;
@@ -37,24 +141,24 @@ function printStack(agent: Agent): void {
   const recent = stack.history(5).slice().reverse();
 
   if (!current && pending.length === 0 && recent.length === 0) {
-    console.log(color(C.dim, 'Task stack is empty'));
+    console.log(pc.dim('Task stack is empty'));
     return;
   }
 
   if (current) {
-    console.log(color(C.bold, 'current:'));
-    console.log('  ' + color(C.cyan, fmtTask(current)));
+    console.log(pc.bold('current:'));
+    console.log('  ' + pc.cyan(fmtTask(current)));
   }
   if (pending.length > 0) {
-    console.log(color(C.bold, `pending (${pending.length}):`));
+    console.log(pc.bold(`pending (${pending.length}):`));
     for (let i = pending.length - 1; i >= 0; i--) {
-      console.log('  ' + color(C.yellow, fmtTask(pending[i])));
+      console.log('  ' + pc.yellow(fmtTask(pending[i])));
     }
   }
   if (recent.length > 0) {
-    console.log(color(C.bold, `completed (last ${recent.length}):`));
+    console.log(pc.bold(`completed (last ${recent.length}):`));
     for (const t of recent) {
-      console.log('  ' + color(C.dim, fmtTask(t)));
+      console.log('  ' + pc.dim(fmtTask(t)));
     }
   }
 }
@@ -64,7 +168,7 @@ async function runChat(configPath?: string): Promise<void> {
   try {
     boot = await bootstrap(configPath);
   } catch (err) {
-    console.error(color(C.red, `[error] ${(err as Error).message}`));
+    console.error(pc.red(`[error] ${(err as Error).message}`));
     process.exit(1);
   }
 
@@ -72,24 +176,24 @@ async function runChat(configPath?: string): Promise<void> {
   activeConnections = connections;
 
   if (createdDefault) {
-    console.log(color(C.yellow, `Created ~/.my-agent/config.json — edit model settings there.`));
+    console.log(pc.yellow(`Created ~/.my-agent/config.json — edit model settings there.`));
   }
 
-  console.log(color(C.bold, 'my-agent') + color(C.dim, ` v${VERSION}`));
+  console.log(pc.bold('my-agent') + pc.dim(` v${VERSION}`));
   const home = process.env.HOME ?? '';
   const pretty = configSources.map((s) => (home && s.startsWith(home) ? '~' + s.slice(home.length) : s));
   if (pretty.length > 0) {
-    console.log(color(C.dim, `config: ${pretty.join(' + ')}`));
+    console.log(pc.dim(`config: ${pretty.join(' + ')}`));
   } else {
-    console.log(color(C.dim, `config: (defaults)`));
+    console.log(pc.dim(`config: (defaults)`));
   }
-  console.log(color(C.dim, `model:  ${config.model.model} @ ${config.model.baseURL}`));
+  console.log(pc.dim(`model:  ${config.model.model} @ ${config.model.baseURL}`));
 
   const serverSummary = connections
     .map((c) => `${c.name}(${c.tools.length})`)
     .join(', ') || '(none)';
-  console.log(color(C.dim, `mcp:    ${serverSummary}`));
-  console.log(color(C.dim, `commands: /quit /tools /clear /stack /abort /archive <id>`));
+  console.log(pc.dim(`mcp:    ${serverSummary}`));
+  console.log(pc.dim(`commands: /quit /tools /clear /stack /abort /archive <id>`));
   console.log('');
 
   const rl = readline.createInterface({ input, output });
@@ -98,13 +202,21 @@ async function runChat(configPath?: string): Promise<void> {
   const cleanup = async (code = 0): Promise<void> => {
     if (stopping) return;
     stopping = true;
+    if (activeThink) {
+      activeThink.stop();
+      activeThink = null;
+    }
     rl.close();
     await shutdown(connections);
     process.exit(code);
   };
 
   const onSigint = (): void => {
-    console.log('\n' + color(C.dim, '[interrupt] shutting down...'));
+    if (activeThink) {
+      activeThink.stop();
+      activeThink = null;
+    }
+    console.log('\n' + pc.dim('[interrupt] shutting down...'));
     void cleanup(0);
   };
   process.on('SIGINT', onSigint);
@@ -112,7 +224,7 @@ async function runChat(configPath?: string): Promise<void> {
   while (!stopping) {
     let line: string;
     try {
-      line = await rl.question(color(C.cyan, '> '));
+      line = await rl.question(pc.cyan(`${figures.pointer} `));
     } catch {
       break;
     }
@@ -124,17 +236,17 @@ async function runChat(configPath?: string): Promise<void> {
     }
     if (trimmed === '/tools') {
       for (const conn of connections) {
-        console.log(color(C.bold, conn.name) + color(C.dim, `  (${conn.tools.length} tools)`));
+        console.log(pc.bold(conn.name) + pc.dim(`  (${conn.tools.length} tools)`));
         for (const t of conn.tools) {
           const desc = t.description ? ` — ${t.description}` : '';
-          console.log(color(C.dim, `  - ${t.name}${desc}`));
+          console.log(pc.dim(`  - ${t.name}${desc}`));
         }
       }
       continue;
     }
     if (trimmed === '/clear') {
       agent.reset();
-      console.log(color(C.dim, '[cleared]'));
+      console.log(pc.dim('[cleared]'));
       continue;
     }
     if (trimmed === '/stack') {
@@ -143,54 +255,41 @@ async function runChat(configPath?: string): Promise<void> {
     }
     if (trimmed === '/abort') {
       const n = agent.abortAll();
-      console.log(color(C.dim, `Aborted ${n} pending tasks`));
+      console.log(pc.dim(`Aborted ${n} pending tasks`));
       continue;
     }
     if (trimmed.startsWith('/archive')) {
       const id = trimmed.slice('/archive'.length).trim();
       if (!id) {
-        console.log(color(C.dim, 'usage: /archive <id>'));
+        console.log(pc.dim('usage: /archive <id>'));
         continue;
       }
       const archive = agent.getArchive(id);
       if (!archive) {
-        console.log(color(C.dim, `No archive for task ${id}`));
+        console.log(pc.dim(`No archive for task ${id}`));
       } else {
-        console.log(color(C.bold, `archive ${id}`));
+        console.log(pc.bold(`archive ${id}`));
         console.log(JSON.stringify(archive, null, 2));
       }
       continue;
     }
 
+    const think = new ThinkStream();
+    activeThink = think;
+    think.start();
     try {
-      let wrote = false;
-      let inTask = false;
-      let wroteGreen = false;
       for await (const chunk of agent.chat(trimmed)) {
-        if (chunk.startsWith('[task]')) {
-          if (wroteGreen) {
-            process.stdout.write(C.reset);
-            wroteGreen = false;
-          }
-          const prefix = C.dim + (chunk.startsWith('[task] ✗') ? C.red : C.cyan);
-          process.stdout.write(prefix + chunk + C.reset);
-          inTask = true;
-        } else {
-          if (inTask || !wroteGreen) {
-            process.stdout.write(C.green);
-            wroteGreen = true;
-            inTask = false;
-          }
-          process.stdout.write(chunk);
-        }
-        wrote = true;
+        think.push(chunk);
       }
-      if (wroteGreen) process.stdout.write(C.reset);
-      if (wrote) process.stdout.write('\n');
     } catch (err) {
-      process.stdout.write(C.reset);
-      console.error(color(C.red, `[error] ${(err as Error).message}`));
+      think.stop();
+      activeThink = null;
+      console.error(pc.red(`[error] ${(err as Error).message}`));
+      continue;
     }
+    think.stop();
+    activeThink = null;
+    if (think.hasFinal()) process.stdout.write('\n');
   }
 
   await cleanup(0);
@@ -216,10 +315,10 @@ async function main(): Promise<void> {
     .argument('[apiKey]', 'API key (default: lm-studio)', 'lm-studio')
     .action((baseURL: string, model: string, apiKey: string) => {
       writeGlobalConfig({ baseURL, model, apiKey });
-      console.log(color(C.green, `✓ Saved to ~/.my-agent/config.json`));
-      console.log(color(C.dim, `  baseURL: ${baseURL}`));
-      console.log(color(C.dim, `  model:   ${model}`));
-      console.log(color(C.dim, `  apiKey:  ${apiKey}`));
+      console.log(pc.green(`${figures.tick} Saved to ~/.my-agent/config.json`));
+      console.log(pc.dim(`  baseURL: ${baseURL}`));
+      console.log(pc.dim(`  model:   ${model}`));
+      console.log(pc.dim(`  apiKey:  ${apiKey}`));
     });
 
   program
@@ -238,7 +337,7 @@ async function main(): Promise<void> {
 }
 
 main().catch(async (err) => {
-  console.error(color(C.red, `[fatal] ${(err as Error).stack ?? (err as Error).message}`));
+  console.error(pc.red(`[fatal] ${(err as Error).stack ?? (err as Error).message}`));
   try {
     await shutdown(activeConnections);
   } catch {
