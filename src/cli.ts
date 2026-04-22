@@ -56,7 +56,8 @@ class ThinkStream {
   private render(): void {
     if (this.gotFinal || !this.isTTY) return;
     const spin = pc.cyan(FRAMES[this.frame]);
-    logUpdate(`${spin} ${pc.dim(this.lastEvent)} ${pc.dim(`(${this.elapsed()})`)}`);
+    const hint = pc.dim('ESC 中断');
+    logUpdate(`${spin} ${pc.dim(this.lastEvent)} ${pc.dim(`(${this.elapsed()})`)}  ${hint}`);
   }
 
   getElapsed(): string {
@@ -152,8 +153,31 @@ class ThinkStream {
     if (/^#{1,6}\s/.test(line)) {
       return '\n' + pc.bold(line.replace(/^#+\s*/, ''));
     }
+    if (/^-{3,}$|^\*{3,}$|^_{3,}$/.test(line.trim())) {
+      const cols = Math.min(process.stdout.columns || 80, 60);
+      return pc.dim('─'.repeat(cols));
+    }
+    if (/^\|[-:| ]+\|$/.test(line.trim())) {
+      return pc.dim('─'.repeat(Math.min(line.length, 60)));
+    }
+    if (/^\|/.test(line.trim())) {
+      const cells = line.split('|').filter(c => c.trim());
+      let out = cells.map(c => {
+        let cell = c.trim();
+        cell = cell.replace(/\*\*(.+?)\*\*/g, (_, t) => pc.bold(t));
+        cell = cell.replace(/`([^`]+)`/g, (_, t) => pc.cyan(t));
+        return cell;
+      }).join(pc.dim('  │  '));
+      return pc.dim('│  ') + out + pc.dim('  │');
+    }
     if (/^\s*[-*]\s/.test(line)) {
       let out = line.replace(/^(\s*)[-*]\s/, '$1• ');
+      out = out.replace(/\*\*(.+?)\*\*/g, (_, t) => pc.bold(t));
+      out = out.replace(/`([^`]+)`/g, (_, t) => pc.cyan(t));
+      return out;
+    }
+    if (/^\s*\d+\.\s/.test(line)) {
+      let out = line;
       out = out.replace(/\*\*(.+?)\*\*/g, (_, t) => pc.bold(t));
       out = out.replace(/`([^`]+)`/g, (_, t) => pc.cyan(t));
       return out;
