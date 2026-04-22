@@ -4,7 +4,8 @@ import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { bootstrap, shutdown } from './index.js';
 import type { BootstrapResult } from './index.js';
-import type { McpConnection } from './mcp/types.js';
+import type { Agent, McpConnection } from './mcp/types.js';
+import type { Task } from './task-stack.js';
 
 let activeConnections: McpConnection[] = [];
 
@@ -23,6 +24,39 @@ function color(code: string, text: string): string {
 }
 
 const VERSION = '1.0.0';
+
+function fmtTask(t: Task): string {
+  return `${t.id}  ${t.prompt}`;
+}
+
+function printStack(agent: Agent): void {
+  const stack = agent.getTaskStack();
+  const current = stack.current();
+  const pending = stack.pending();
+  const recent = stack.history(5).slice().reverse();
+
+  if (!current && pending.length === 0 && recent.length === 0) {
+    console.log(color(C.dim, 'Task stack is empty'));
+    return;
+  }
+
+  if (current) {
+    console.log(color(C.bold, 'current:'));
+    console.log('  ' + color(C.cyan, fmtTask(current)));
+  }
+  if (pending.length > 0) {
+    console.log(color(C.bold, `pending (${pending.length}):`));
+    for (let i = pending.length - 1; i >= 0; i--) {
+      console.log('  ' + color(C.yellow, fmtTask(pending[i])));
+    }
+  }
+  if (recent.length > 0) {
+    console.log(color(C.bold, `completed (last ${recent.length}):`));
+    for (const t of recent) {
+      console.log('  ' + color(C.dim, fmtTask(t)));
+    }
+  }
+}
 
 async function runChat(configPath?: string): Promise<void> {
   let boot: BootstrapResult;
@@ -44,7 +78,7 @@ async function runChat(configPath?: string): Promise<void> {
     .map((c) => `${c.name}(${c.tools.length})`)
     .join(', ') || '(none)';
   console.log(color(C.dim, `mcp:    ${serverSummary}`));
-  console.log(color(C.dim, `commands: /quit /tools /clear`));
+  console.log(color(C.dim, `commands: /quit /tools /clear /stack /abort /archive <id>`));
   console.log('');
 
   const rl = readline.createInterface({ input, output });
@@ -92,16 +126,56 @@ async function runChat(configPath?: string): Promise<void> {
       console.log(color(C.dim, '[cleared]'));
       continue;
     }
+    if (trimmed === '/stack') {
+      printStack(agent);
+      continue;
+    }
+    if (trimmed === '/abort') {
+      const n = agent.abortAll();
+      console.log(color(C.dim, `Aborted ${n} pending tasks`));
+      continue;
+    }
+    if (trimmed.startsWith('/archive')) {
+      const id = trimmed.slice('/archive'.length).trim();
+      if (!id) {
+        console.log(color(C.dim, 'usage: /archive <id>'));
+        continue;
+      }
+      const archive = agent.getArchive(id);
+      if (!archive) {
+        console.log(color(C.dim, `No archive for task ${id}`));
+      } else {
+        console.log(color(C.bold, `archive ${id}`));
+        console.log(JSON.stringify(archive, null, 2));
+      }
+      continue;
+    }
 
     try {
-      process.stdout.write(C.green);
       let wrote = false;
+      let inTask = false;
+      let wroteGreen = false;
       for await (const chunk of agent.chat(trimmed)) {
-        process.stdout.write(chunk);
+        if (chunk.startsWith('[task]')) {
+          if (wroteGreen) {
+            process.stdout.write(C.reset);
+            wroteGreen = false;
+          }
+          const prefix = C.dim + (chunk.startsWith('[task] ✗') ? C.red : C.cyan);
+          process.stdout.write(prefix + chunk + C.reset);
+          inTask = true;
+        } else {
+          if (inTask || !wroteGreen) {
+            process.stdout.write(C.green);
+            wroteGreen = true;
+            inTask = false;
+          }
+          process.stdout.write(chunk);
+        }
         wrote = true;
       }
+      if (wroteGreen) process.stdout.write(C.reset);
       if (wrote) process.stdout.write('\n');
-      process.stdout.write(C.reset);
     } catch (err) {
       process.stdout.write(C.reset);
       console.error(color(C.red, `[error] ${(err as Error).message}`));

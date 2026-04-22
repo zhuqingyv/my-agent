@@ -1,4 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
+import type { TaskStack } from '../task-stack.js';
 
 export interface McpTool {
   name: string;
@@ -39,7 +40,16 @@ export interface AgentConfig {
   maxLoops?: number;
 }
 
+export interface ArchivedMessage {
+  role: string;
+  content: unknown;
+  [key: string]: unknown;
+}
+
 export interface Agent {
   chat(userMessage: string): AsyncGenerator<string, void, unknown>;
   reset(): void;
+  getTaskStack(): TaskStack;
+  getArchive(taskId: string): ArchivedMessage[] | null;
+  abortAll(): number;
 }
