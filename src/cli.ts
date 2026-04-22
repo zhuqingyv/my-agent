@@ -83,14 +83,14 @@ class ThinkStream {
 
   private onToolEnd(c: string): void {
     const ok = c.startsWith('[tool:ok]');
-    const content = c.replace(/\[tool:(ok|err)\]\s*/, '').trim();
-    const preview = content.split('\n')[0].slice(0, 50);
     if (ok) {
-      this.persist(pc.green(figures.tick) + ' ' + pc.dim(preview || '完成'));
+      this.lastEvent = '分析结果中';
     } else {
+      const content = c.replace(/\[tool:(ok|err)\]\s*/, '').trim();
+      const preview = content.split('\n')[0].slice(0, 50);
       this.persist(pc.red(figures.cross) + ' ' + pc.dim(preview || '失败'));
+      this.lastEvent = '处理错误中';
     }
-    this.lastEvent = '分析结果中';
   }
 
   private onFinal(chunk: string): void {
