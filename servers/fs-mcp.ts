@@ -120,6 +120,13 @@ function handleReadFile(args: Record<string, unknown>) {
     const content = readFileSync(path, { encoding: encoding as BufferEncoding });
     return textResult(content);
   } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') {
+      return textResult(`文件不存在: ${path}`, true);
+    }
+    if (code === 'EISDIR') {
+      return textResult(`不是文件（是目录）: ${path}`, true);
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return textResult(`read_file failed: ${msg}`, true);
   }
@@ -207,7 +214,7 @@ function handleListDirectory(args: Record<string, unknown>) {
   try {
     const st = statSync(path);
     if (!st.isDirectory()) {
-      return textResult(`list_directory: not a directory: ${path}`, true);
+      return textResult(`不是目录（是文件）: ${path}`, true);
     }
     const { lines, truncated, total } = walk(path, recursive, maxEntries);
     if (truncated) {
@@ -216,6 +223,10 @@ function handleListDirectory(args: Record<string, unknown>) {
     }
     return textResult(lines.join('\n'));
   } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') {
+      return textResult(`目录不存在: ${path}`, true);
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return textResult(`list_directory failed: ${msg}`, true);
   }

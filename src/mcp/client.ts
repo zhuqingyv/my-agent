@@ -1,10 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { setMaxListeners } from 'node:events';
 import type {
   McpConnection,
   McpServerConfig,
   McpTool,
   McpCallResult,
 } from './types.js';
+
+const signalLimitApplied = new WeakSet<AbortSignal>();
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -147,6 +150,10 @@ export class McpClient implements McpConnection {
 
       let onAbort: (() => void) | null = null;
       if (signal) {
+        if (!signalLimitApplied.has(signal)) {
+          setMaxListeners(50, signal);
+          signalLimitApplied.add(signal);
+        }
         onAbort = () => {
           clearTimeout(timer);
           this.pending.delete(id);

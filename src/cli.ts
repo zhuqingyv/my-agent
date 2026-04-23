@@ -5,7 +5,10 @@ import * as readlineSync from 'node:readline';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { EventEmitter } from 'node:events';
 import { stdin as input, stdout as output } from 'node:process';
+
+EventEmitter.defaultMaxListeners = 50;
 import pc from 'picocolors';
 import figures from 'figures';
 import logUpdate from 'log-update';
@@ -206,6 +209,10 @@ class ThinkStream {
 
   private persist(line: string): void {
     logUpdate.clear();
+    if (this.gotFinal && this.lineBuf) {
+      process.stdout.write(this.formatLine(this.lineBuf) + '\n');
+      this.lineBuf = '';
+    }
     console.log(line);
     if (!this.gotFinal) this.render();
   }

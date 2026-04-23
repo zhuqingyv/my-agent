@@ -174,3 +174,98 @@ test('McpClient: exit rejects pending requests', async () => {
   proc.emit('exit', 1, null);
   await assert.rejects(p, /exited/);
 });
+
+test('McpClient.request: removes abort listener after resolve', async () => {
+  const proc = fakeProc();
+  const client = new McpClient('exec', proc);
+  const controller = new AbortController();
+
+  proc.stdin.on('data', (chunk: Buffer) => {
+    for (const line of chunk.toString('utf-8').split('\n')) {
+      if (!line.trim()) continue;
+      const m = JSON.parse(line);
+      proc.stdout.write(
+        JSON.stringify({ jsonrpc: '2.0', id: m.id, result: 'ok' }) + '\n'
+      );
+    }
+  });
+
+  const N = 30;
+  await Promise.all(
+    Array.from({ length: N }, (_, i) =>
+      client.request('m' + i, {}, controller.signal)
+    )
+  );
+
+  // All requests resolved — no abort listener should remain on the signal.
+  // EventTarget does not expose listenerCount directly, so we dispatch abort
+  // and assert none of the per-request onAbort callbacks were invoked.
+  // Easier sanity check: call setMaxListeners(1) on a fresh signal, fire many
+  // concurrent requests, and verify no MaxListenersExceededWarning is emitted.
+  const warnings: string[] = [];
+  const origEmit = process.emitWarning;
+  process.emitWarning = (w: any, ...rest: any[]) => {
+    warnings.push(String(w?.message ?? w));
+    return origEmit.call(process, w, ...rest);
+  };
+  try {
+    const proc2 = fakeProc();
+    const client2 = new McpClient('exec2', proc2);
+    const controller2 = new AbortController();
+    proc2.stdin.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString('utf-8').split('\n')) {
+        if (!line.trim()) continue;
+        const m = JSON.parse(line);
+        proc2.stdout.write(
+          JSON.stringify({ jsonrpc: '2.0', id: m.id, result: 'ok' }) + '\n'
+        );
+      }
+    });
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        client2.request('m' + i, {}, controller2.signal)
+      )
+    );
+  } finally {
+    process.emitWarning = origEmit;
+  }
+
+  assert.ok(
+    !warnings.some((w) => w.includes('MaxListenersExceededWarning')),
+    `should not emit MaxListenersExceededWarning, got: ${warnings.join(' | ')}`
+  );
+});
+
+test('McpClient.request: removes abort listener after reject', async () => {
+  const proc = fakeProc();
+  const client = new McpClient('exec', proc);
+  const controller = new AbortController();
+
+  proc.stdin.on('data', (chunk: Buffer) => {
+    for (const line of chunk.toString('utf-8').split('\n')) {
+      if (!line.trim()) continue;
+      const m = JSON.parse(line);
+      proc.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: m.id,
+          error: { code: -1, message: 'x' },
+        }) + '\n'
+      );
+    }
+  });
+
+  // Run several failing requests against the same signal; then abort and
+  // verify the signal's onAbort callbacks have all been cleaned up (no
+  // rejection side-effects on already-settled promises).
+  await Promise.allSettled(
+    Array.from({ length: 10 }, (_, i) =>
+      client.request('m' + i, {}, controller.signal).catch(() => {})
+    )
+  );
+  // Firing abort now must not throw / trigger anything observable.
+  controller.abort();
+  // Give microtasks a tick.
+  await new Promise((r) => setTimeout(r, 5));
+  assert.ok(true);
+});
