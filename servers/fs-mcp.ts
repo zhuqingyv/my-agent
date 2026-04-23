@@ -198,15 +198,12 @@ function walk(root: string, recursive: boolean, maxEntries: number): WalkResult 
 }
 
 function handleListDirectory(args: Record<string, unknown>) {
-  const path = args.path;
+  const path = (typeof args.path === 'string' && args.path.length > 0) ? args.path : '.';
   const recursive = args.recursive === true;
   const maxEntries =
     typeof args.maxEntries === 'number' && args.maxEntries > 0
       ? Math.floor(args.maxEntries)
       : 200;
-  if (typeof path !== 'string' || path.length === 0) {
-    return textResult('list_directory: "path" must be a non-empty string', true);
-  }
   try {
     const st = statSync(path);
     if (!st.isDirectory()) {
