@@ -75,8 +75,11 @@ class ThinkStream {
   private render(): void {
     if (this.gotFinal || !this.isTTY) return;
     const spin = pc.cyan(FRAMES[this.frame]);
+    const sep = pc.dim('·');
+    const event = pc.dim(this.lastEvent);
+    const elapsed = pc.dim(this.elapsed());
     const hint = pc.dim('ESC 中断');
-    logUpdate(`${spin} ${pc.dim(this.lastEvent)} ${pc.dim(`(${this.elapsed()})`)}  ${hint}`);
+    logUpdate(`  ${spin} ${event}  ${sep}  ${elapsed}  ${sep}  ${hint}`);
   }
 
   getElapsed(): string {
@@ -97,7 +100,7 @@ class ThinkStream {
         this.lastEvent = event.prompt.slice(0, 60) || '执行任务';
         break;
       case 'task:done':
-        this.persist(pc.green(figures.tick) + ' ' + pc.dim('任务完成'));
+        this.persist('\n' + pc.green(figures.tick) + ' ' + pc.dim('任务完成'));
         break;
       case 'task:failed':
         this.persist(pc.red(figures.cross) + ' ' + pc.dim(event.error.slice(0, 50) || '任务失败'));
@@ -112,11 +115,11 @@ class ThinkStream {
         break;
       case 'tool:result':
         if (event.ok) {
-          this.persist(pc.green(figures.tick) + ' ' + pc.dim(this.lastToolName || '完成'));
+          this.persist('  ' + pc.dim(pc.green('✓')) + ' ' + pc.dim(pc.green(this.lastToolName || '完成')));
           this.lastEvent = '分析结果中';
         } else {
           const preview = event.content.split('\n')[0].slice(0, 50);
-          this.persist(pc.red(figures.cross) + ' ' + pc.dim(preview || '失败'));
+          this.persist('  ' + pc.dim(pc.red('✗')) + ' ' + pc.dim(pc.red(preview || '失败')));
           this.lastEvent = '处理错误中';
         }
         break;
@@ -138,7 +141,7 @@ class ThinkStream {
       this.gotFinal = true;
       this.stopTimer();
       logUpdate.clear();
-      process.stdout.write('\n');
+      process.stdout.write('\n\n');
     }
     this.finalBuf += chunk;
 
@@ -336,12 +339,6 @@ commands.set('/archive', {
   },
 });
 
-function formatCommandsBanner(): string {
-  const names = ['/quit', ...commands.keys()];
-  const withArchiveArg = names.map((n) => (n === '/archive' ? '/archive <id>' : n));
-  return withArchiveArg.join(' ');
-}
-
 async function runChat(configPath?: string): Promise<void> {
   let boot: BootstrapResult;
   try {
@@ -351,28 +348,26 @@ async function runChat(configPath?: string): Promise<void> {
     process.exit(1);
   }
 
-  const { config, configSources, createdDefault, connections, agent } = boot;
+  const { config, createdDefault, connections, agent } = boot;
   activeConnections = connections;
 
   if (createdDefault) {
     console.log(pc.yellow(`Created ~/.my-agent/config.json — edit model settings there.`));
   }
 
-  console.log(pc.bold('my-agent') + pc.dim(` v${VERSION}`));
-  const home = process.env.HOME ?? '';
-  const pretty = configSources.map((s) => (home && s.startsWith(home) ? '~' + s.slice(home.length) : s));
-  if (pretty.length > 0) {
-    console.log(pc.dim(`config: ${pretty.join(' + ')}`));
-  } else {
-    console.log(pc.dim(`config: (defaults)`));
-  }
-  console.log(pc.dim(`model:  ${config.model.model} @ ${config.model.baseURL}`));
+  const titlePlain = `my-agent  v${VERSION}`;
+  const innerWidth = Math.max(titlePlain.length + 4, 25);
+  const pad = ' '.repeat(innerWidth - titlePlain.length - 2);
+  console.log('  ' + pc.cyan('╭' + '─'.repeat(innerWidth) + '╮'));
+  console.log('  ' + pc.cyan('│') + '  ' + pc.bold(pc.cyan('my-agent')) + '  ' + pc.dim(`v${VERSION}`) + pad + pc.cyan('│'));
+  console.log('  ' + pc.cyan('╰' + '─'.repeat(innerWidth) + '╯'));
+
+  console.log('  ' + pc.dim('model:') + '  ' + pc.bold(config.model.model) + '  ' + pc.dim(config.model.baseURL));
 
   const serverSummary = connections
-    .map((c) => `${c.name}(${c.tools.length})`)
-    .join(', ') || '(none)';
-  console.log(pc.dim(`mcp:    ${serverSummary}`));
-  console.log(pc.dim(`commands: ${formatCommandsBanner()}`));
+    .map((c) => `${c.name}(${pc.green(String(c.tools.length))})`)
+    .join(', ') || pc.dim('(none)');
+  console.log('  ' + pc.dim('mcp:') + '    ' + serverSummary);
   console.log('');
 
   const rl = readline.createInterface({ input, output });
@@ -471,7 +466,7 @@ async function runChat(configPath?: string): Promise<void> {
       process.stdout.write('\n');
     }
     process.stdout.write('\n' + pc.dim(`✱ 完成 (${think.getElapsed()})`) + '\n');
-    process.stdout.write(pc.dim('─'.repeat(Math.min(process.stdout.columns || 80, 80))) + '\n\n');
+    process.stdout.write('\n' + pc.dim('─'.repeat(Math.min(process.stdout.columns || 80, 80))) + '\n\n\n');
   }
 
   await cleanup(0);
