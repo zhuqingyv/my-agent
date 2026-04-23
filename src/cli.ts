@@ -520,10 +520,9 @@ async function main(): Promise<void> {
       console.log(VERSION);
     });
 
-  if (process.argv.length <= 2) {
+  program.action(async () => {
     await runChat();
-    return;
-  }
+  });
 
   await program.parseAsync(process.argv);
 }
