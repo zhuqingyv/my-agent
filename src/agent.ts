@@ -27,6 +27,32 @@ const TOOL_NAME_SEP = '__';
 const DEFAULT_MAX_LOOPS = 20;
 const CREATE_TASK_TOOL_NAME = 'create_task';
 
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = 2,
+  delay = 1000
+): Promise<T> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = (err as any)?.status;
+      if (i < retries && (status === 500 || status === 502 || status === 503)) {
+        await new Promise((r) => setTimeout(r, delay * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('unreachable');
+}
+
+function cleanErrorMessage(msg: string): string {
+  let clean = msg.replace(/<[^>]*>/g, '').trim();
+  clean = clean.replace(/\s+/g, ' ');
+  return clean.slice(0, 200) || 'unknown error';
+}
+
 const CREATE_TASK_TOOL: ChatCompletionTool = {
   type: 'function',
   function: {
@@ -151,7 +177,7 @@ export async function createAgent(
   const maxLoops = config.maxLoops ?? DEFAULT_MAX_LOOPS;
   const systemPrompt =
     config.systemPrompt ??
-    '你是本地 CLI 助手。有工具就用工具，没工具就直接答。\n\n回答规则：\n- 简洁但完整，该详细时详细，该简短时简短。\n- 不要客套、不要"如果你需要..."之类的套话。\n- 不要复述任务栈状态，那是内部信息。\n- 中文问就用中文答。';
+    '你是本地 CLI 助手。有工具就用工具，没工具就直接答。\n\n回答规则：\n- 简洁但完整，该详细时详细，该简短时简短。\n- 不要客套、不要"如果你需要..."之类的套话。\n- 不要复述任务栈状态，那是内部信息。\n- 中文问就用中文答。\n\n工具使用规则：\n- 调用 read_file 时必须提供完整文件路径\n- 调用 list_directory 时必须提供目录路径，用 . 表示当前目录\n- 调用 execute_command 时必须提供具体命令\n- 如果工具调用失败，换个方式重试而不是放弃';
 
   const messages: ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
@@ -198,9 +224,11 @@ export async function createAgent(
         request.tool_choice = 'auto';
       }
 
-      const stream = await client.chat.completions.create(
-        { ...request, stream: true },
-        { signal }
+      const stream = await withRetry(() =>
+        client.chat.completions.create(
+          { ...request, stream: true },
+          { signal }
+        )
       );
 
       let contentBuf = '';
@@ -367,7 +395,7 @@ export async function createAgent(
       }
 
       if (failed) {
-        const cleanError = failMessage.replace(/<[^>]*>/g, '').trim().slice(0, 200) || 'unknown error';
+        const cleanError = cleanErrorMessage(failMessage);
         stack.markFailed(task.id, cleanError);
         foldMessages(
           task.messageAnchor,

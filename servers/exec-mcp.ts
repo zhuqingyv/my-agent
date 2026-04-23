@@ -109,8 +109,13 @@ function runCommand(args: ExecArgs): Promise<{ text: string; isError: boolean }>
           const killed = (err as NodeJS.ErrnoException & { killed?: boolean }).killed;
           const signal = (err as NodeJS.ErrnoException & { signal?: string }).signal;
           const code = (err as NodeJS.ErrnoException & { code?: number | string }).code;
-          const reason = killed && signal === 'SIGTERM' ? `timed out after ${timeout}ms` : `exit code ${code}`;
-          const text = `Error: command failed (${reason})\n${combined}`.trimEnd();
+          let text: string;
+          if (killed && signal === 'SIGTERM') {
+            text = `命令执行超时（${timeout}ms）。建议：使用更精确的命令或增加超时时间。`;
+          } else {
+            const stderrSnippet = errOut.slice(0, 200);
+            text = `命令失败（退出码 ${code}）: ${stderrSnippet}`;
+          }
           resolve({ text, isError: true });
           return;
         }
@@ -132,9 +137,9 @@ async function handleToolsCall(params: any): Promise<any> {
     };
   }
 
-  if (typeof args.command !== 'string' || args.command.length === 0) {
+  if (!args.command || typeof args.command !== 'string' || args.command.trim().length === 0) {
     return {
-      content: [{ type: 'text', text: 'Error: "command" argument is required and must be a non-empty string' }],
+      content: [{ type: 'text', text: '请提供要执行的命令，例如: execute_command(command: "ls -la")' }],
       isError: true,
     };
   }

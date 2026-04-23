@@ -118,7 +118,7 @@ class ThinkStream {
           this.persist('  ' + pc.dim(pc.green('✓')) + ' ' + pc.dim(pc.green(this.lastToolName || '完成')));
           this.lastEvent = '分析结果中';
         } else {
-          const preview = event.content.split('\n')[0].slice(0, 50);
+          const preview = event.content.replace(/<[^>]*>/g, '').trim().split('\n')[0].slice(0, 50);
           this.persist('  ' + pc.dim(pc.red('✗')) + ' ' + pc.dim(pc.red(preview || '失败')));
           this.lastEvent = '处理错误中';
         }

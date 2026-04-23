@@ -11,6 +11,7 @@
     "build": "tsc",
     "dev": "tsx watch src/cli.ts",
     "test": "tsx --test test/*.test.ts",
+    "e2e": "bash test/e2e.sh",
     "init": "tsx src/init.ts",
     "visual": "playwright test --config test/visual/playwright.config.ts",
     "visual:server": "tsx test/visual/server.ts"

@@ -35,7 +35,7 @@ const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Path to the file to read.' },
+        path: { type: 'string', description: '绝对或相对文件路径（必填，不能为空）。例如: ./package.json 或 src/index.ts' },
         encoding: {
           type: 'string',
           description: 'Text encoding (default "utf-8").',
@@ -69,7 +69,7 @@ const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Directory path to list.' },
+        path: { type: 'string', description: '目录路径（必填，不能为空）。用 . 表示当前目录。例如: . 或 ./src' },
         recursive: {
           type: 'boolean',
           description: 'Recurse into subdirectories (default false).',
@@ -114,7 +114,7 @@ function handleReadFile(args: Record<string, unknown>) {
   const path = args.path;
   const encoding = typeof args.encoding === 'string' ? args.encoding : 'utf-8';
   if (typeof path !== 'string' || path.length === 0) {
-    return textResult('read_file: "path" must be a non-empty string', true);
+    return textResult('请提供文件路径，例如: read_file(path: "./package.json")', true);
   }
   try {
     const content = readFileSync(path, { encoding: encoding as BufferEncoding });
