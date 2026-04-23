@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ma visual test</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5/css/xterm.css">
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; background: #1e1e1e; height: 100%; }
+    #terminal { height: 100vh; padding: 8px; box-sizing: border-box; }
+    .xterm-viewport { background-color: #1e1e1e !important; }
+  </style>
+</head>
+<body>
+  <div id="terminal"></div>
+  <script>
+    const term = new Terminal({
+      fontSize: 14,
+      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      cols: 120,
+      rows: 30,
+      theme: { background: '#1e1e1e', foreground: '#d4d4d4' },
+      cursorBlink: false,
+      convertEol: true,
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById('terminal'));
+    fit.fit();
+
+    const ws = new WebSocket('ws://localhost:3456');
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => { window.__wsReady = true; };
+    ws.onmessage = (e) => {
+      const data = typeof e.data === 'string' ? e.data : new TextDecoder().decode(e.data);
+      term.write(data);
+    };
+    ws.onclose = () => { window.__wsClosed = true; };
+    term.onData((data) => ws.readyState === 1 && ws.send(data));
+    window.addEventListener('resize', () => fit.fit());
+
+    // Expose helpers for playwright
+    window.__term = term;
+    window.__getText = () => {
+      const buf = term.buffer.active;
+      const lines = [];
+      for (let i = 0; i < buf.length; i++) {
+        const line = buf.getLine(i);
+        if (line) lines.push(line.translateToString(true));
+      }
+      return lines.join('\n');
+    };
+  </script>
+</body>
+</html>

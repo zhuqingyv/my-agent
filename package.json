@@ -11,7 +11,9 @@
     "build": "tsc",
     "dev": "tsx watch src/cli.ts",
     "test": "tsx --test test/*.test.ts",
-    "init": "tsx src/init.ts"
+    "init": "tsx src/init.ts",
+    "visual": "playwright test --config test/visual/playwright.config.ts",
+    "visual:server": "tsx test/visual/server.ts"
   },
   "dependencies": {
     "@toon-format/toon": "^2.1.0",
@@ -24,10 +26,14 @@
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/marked": "^5.0.2",
     "@types/node": "^22.10.2",
+    "@types/ws": "^8.18.1",
+    "node-pty": "^1.1.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "ws": "^8.20.0"
   },
   "license": "MIT"
 }
