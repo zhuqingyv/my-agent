@@ -7,6 +7,8 @@ const DEFAULT_MODEL: ModelConfig = {
   baseURL: 'http://localhost:1234/v1',
   model: 'qwen3-30b-a3b',
   apiKey: 'lm-studio',
+  temperature: 0.8,
+  frequencyPenalty: 1.15,
 };
 
 export function globalConfigDir(): string {

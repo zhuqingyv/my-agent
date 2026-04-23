@@ -190,6 +190,8 @@ export async function createAgent(
       const request: Parameters<typeof client.chat.completions.create>[0] = {
         model: config.model.model,
         messages,
+        temperature: config.model.temperature ?? 0.8,
+        frequency_penalty: config.model.frequencyPenalty ?? 1.15,
       };
       if (tools.length > 0) {
         request.tools = tools;

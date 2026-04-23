@@ -38,6 +38,8 @@ export interface ModelConfig {
   baseURL: string;
   model: string;
   apiKey: string;
+  temperature?: number;
+  frequencyPenalty?: number;
 }
 
 export interface AgentConfig {
