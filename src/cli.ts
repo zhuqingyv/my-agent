@@ -5,7 +5,6 @@ import * as readlineSync from 'node:readline';
 import { stdin as input, stdout as output } from 'node:process';
 import pc from 'picocolors';
 import figures from 'figures';
-import logUpdate from 'log-update';
 import { marked } from 'marked';
 // @ts-ignore - marked-terminal ships without bundled types
 import { markedTerminal } from 'marked-terminal';
@@ -21,10 +20,72 @@ readlineSync.emitKeypressEvents(process.stdin);
 
 let activeConnections: McpConnection[] = [];
 let activeThink: ThinkStream | null = null;
+let activeLayout: TerminalLayout | null = null;
 
 const VERSION = '1.0.0';
 
 const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+class TerminalLayout {
+  private rows = process.stdout.rows || 24;
+  private cols = process.stdout.columns || 80;
+  private bottomText = '';
+  private active = false;
+
+  activate(): void {
+    if (!process.stdout.isTTY) return;
+    if (this.active) return;
+    this.active = true;
+    this.rows = process.stdout.rows || 24;
+    this.cols = process.stdout.columns || 80;
+    const scrollEnd = Math.max(1, this.rows - 2);
+    process.stdout.write(`\x1b[1;${scrollEnd}r`);
+    process.stdout.write(`\x1b[${scrollEnd};1H`);
+    this.drawBottom();
+    process.stdout.on('resize', this.onResize);
+  }
+
+  deactivate(): void {
+    if (!this.active) return;
+    this.active = false;
+    process.stdout.off('resize', this.onResize);
+    process.stdout.write('\x1b[r');
+    process.stdout.write(`\x1b[${this.rows - 1};1H\x1b[2K`);
+    process.stdout.write(`\x1b[${this.rows};1H\x1b[2K`);
+    process.stdout.write(`\x1b[${this.rows};1H`);
+  }
+
+  isActive(): boolean {
+    return this.active;
+  }
+
+  private onResize = (): void => {
+    if (!this.active) return;
+    this.rows = process.stdout.rows || 24;
+    this.cols = process.stdout.columns || 80;
+    const scrollEnd = Math.max(1, this.rows - 2);
+    process.stdout.write(`\x1b[1;${scrollEnd}r`);
+    this.drawBottom();
+  };
+
+  setBottomText(text: string): void {
+    this.bottomText = text;
+    if (this.active) this.drawBottom();
+  }
+
+  private drawBottom(): void {
+    if (!this.active) return;
+    process.stdout.write('\x1b7');
+    const sepRow = this.rows - 1;
+    const promptRow = this.rows;
+    const cols = Math.min(this.cols, 80);
+    process.stdout.write(`\x1b[${sepRow};1H\x1b[2K`);
+    process.stdout.write(pc.dim('─'.repeat(cols)));
+    process.stdout.write(`\x1b[${promptRow};1H\x1b[2K`);
+    process.stdout.write(this.bottomText || pc.cyan(`${figures.pointer} `));
+    process.stdout.write('\x1b8');
+  }
+}
 
 class ThinkStream {
   private frame = 0;
@@ -56,8 +117,8 @@ class ThinkStream {
   private render(): void {
     if (this.gotFinal || !this.isTTY) return;
     const spin = pc.cyan(FRAMES[this.frame]);
-    const hint = pc.dim('ESC 中断');
-    logUpdate(`${spin} ${pc.dim(this.lastEvent)} ${pc.dim(`(${this.elapsed()})`)}  ${hint}`);
+    process.stdout.write('\r\x1b[2K');
+    process.stdout.write(`${spin} ${pc.dim(this.lastEvent)} ${pc.dim(`(${this.elapsed()})`)}`);
   }
 
   getElapsed(): string {
@@ -118,7 +179,7 @@ class ThinkStream {
     if (!this.gotFinal) {
       this.gotFinal = true;
       this.stopTimer();
-      logUpdate.clear();
+      if (this.isTTY) process.stdout.write('\r\x1b[2K');
       process.stdout.write('\n');
     }
     this.finalBuf += chunk;
@@ -189,8 +250,8 @@ class ThinkStream {
   }
 
   private persist(line: string): void {
-    logUpdate.clear();
-    console.log(line);
+    if (this.isTTY) process.stdout.write('\r\x1b[2K');
+    process.stdout.write(line + '\n');
     if (!this.gotFinal) this.render();
   }
 
@@ -205,9 +266,8 @@ class ThinkStream {
     this.stopTimer();
     if (!this.isTTY) return;
     if (!this.gotFinal) {
-      logUpdate.clear();
+      process.stdout.write('\r\x1b[2K');
     }
-    logUpdate.done();
   }
 
   hasFinal(): boolean {
@@ -354,6 +414,9 @@ async function runChat(configPath?: string): Promise<void> {
 
   const rl = readline.createInterface({ input, output });
 
+  const layout = new TerminalLayout();
+  activeLayout = layout;
+
   let stopping = false;
   const cleanup = async (code = 0): Promise<void> => {
     if (stopping) return;
@@ -361,6 +424,10 @@ async function runChat(configPath?: string): Promise<void> {
     if (activeThink) {
       activeThink.stop();
       activeThink = null;
+    }
+    if (activeLayout) {
+      activeLayout.deactivate();
+      activeLayout = null;
     }
     rl.close();
     await shutdown(connections);
@@ -371,6 +438,9 @@ async function runChat(configPath?: string): Promise<void> {
     if (activeThink) {
       activeThink.stop();
       activeThink = null;
+    }
+    if (activeLayout) {
+      activeLayout.deactivate();
     }
     console.log('\n' + pc.dim('[interrupt] shutting down...'));
     void cleanup(0);
@@ -400,6 +470,9 @@ async function runChat(configPath?: string): Promise<void> {
 
     const think = new ThinkStream();
     activeThink = think;
+
+    layout.activate();
+    layout.setBottomText(pc.cyan(`${figures.pointer} `) + pc.dim('ESC 中断'));
     think.start();
 
     const controller = new AbortController();
@@ -427,6 +500,7 @@ async function runChat(configPath?: string): Promise<void> {
       const name = (err as Error).name;
       if (name !== 'AbortError' && !controller.signal.aborted) {
         think.stop();
+        layout.deactivate();
         process.stdin.off('keypress', onKeypress);
         if (process.stdin.isTTY) process.stdin.setRawMode(rawWasOn);
         activeThink = null;
@@ -447,6 +521,7 @@ async function runChat(configPath?: string): Promise<void> {
     }
     process.stdout.write('\n' + pc.dim(`✱ 完成 (${think.getElapsed()})`) + '\n');
     process.stdout.write(pc.dim('─'.repeat(Math.min(process.stdout.columns || 80, 80))) + '\n\n');
+    layout.deactivate();
   }
 
   await cleanup(0);
