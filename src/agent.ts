@@ -367,13 +367,14 @@ export async function createAgent(
       }
 
       if (failed) {
-        stack.markFailed(task.id, failMessage);
+        const cleanError = failMessage.replace(/<[^>]*>/g, '').trim().slice(0, 200) || 'unknown error';
+        stack.markFailed(task.id, cleanError);
         foldMessages(
           task.messageAnchor,
           task.id,
-          `FAILED: ${failMessage}`.slice(0, 500)
+          `FAILED: ${cleanError}`
         );
-        yield { type: 'task:failed', taskId: task.id, error: failMessage };
+        yield { type: 'task:failed', taskId: task.id, error: cleanError };
       } else if (hitMaxLoops) {
         stack.markFailed(task.id, taskText);
         foldMessages(task.messageAnchor, task.id, taskText);
