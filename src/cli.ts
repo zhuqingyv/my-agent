@@ -2,6 +2,9 @@
 import { Command } from 'commander';
 import * as readline from 'node:readline/promises';
 import * as readlineSync from 'node:readline';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { stdin as input, stdout as output } from 'node:process';
 import pc from 'picocolors';
 import figures from 'figures';
@@ -21,6 +24,19 @@ readlineSync.emitKeypressEvents(process.stdin);
 
 let activeConnections: McpConnection[] = [];
 let activeThink: ThinkStream | null = null;
+let debugMode = false;
+let logStream: fs.WriteStream | null = null;
+
+function debugLog(msg: string): void {
+  if (!debugMode || !logStream) return;
+  const ts = new Date().toISOString();
+  logStream.write(`[${ts}] ${msg}\n`);
+}
+
+function debugEvent(event: AgentEvent): void {
+  if (!debugMode) return;
+  debugLog(`EVENT ${event.type} ${JSON.stringify(event)}`);
+}
 
 const VERSION = '1.0.0';
 
@@ -419,7 +435,9 @@ async function runChat(configPath?: string): Promise<void> {
     process.stdin.resume();
 
     try {
+      debugLog(`USER: ${trimmed}`);
       for await (const chunk of agent.chat(trimmed, controller.signal)) {
+        debugEvent(chunk);
         think.push(chunk);
         if (controller.signal.aborted) break;
       }
@@ -462,6 +480,23 @@ async function main(): Promise<void> {
     .option('-c, --config <path>', 'path to config file')
     .action(async (opts: { config?: string }) => {
       await runChat(opts.config);
+    });
+
+  program
+    .command('dev')
+    .description('Start chat with debug logging to ~/.my-agent/debug.log')
+    .option('-c, --config <path>', 'path to config file')
+    .action(async (opts: { config?: string }) => {
+      debugMode = true;
+      const logDir = path.join(os.homedir(), '.my-agent');
+      fs.mkdirSync(logDir, { recursive: true });
+      const logPath = path.join(logDir, 'debug.log');
+      logStream = fs.createWriteStream(logPath, { flags: 'a' });
+      debugLog('=== session start ===');
+      console.log(pc.yellow(`${figures.warning} debug mode — logging to ~/.my-agent/debug.log`));
+      await runChat(opts.config);
+      debugLog('=== session end ===');
+      logStream.end();
     });
 
   program
