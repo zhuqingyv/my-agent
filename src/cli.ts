@@ -49,10 +49,15 @@ class TerminalLayout {
     if (!this.active) return;
     this.active = false;
     process.stdout.off('resize', this.onResize);
-    process.stdout.write('\x1b[r');
+    // 保存当前光标位置（在 scroll region 内容末尾）
+    process.stdout.write('\x1b7');
+    // 清掉底部固定行
     process.stdout.write(`\x1b[${this.rows - 1};1H\x1b[2K`);
     process.stdout.write(`\x1b[${this.rows};1H\x1b[2K`);
-    process.stdout.write(`\x1b[${this.rows};1H`);
+    // 恢复光标到内容末尾
+    process.stdout.write('\x1b8');
+    // 重置 scroll region
+    process.stdout.write('\x1b[r');
   }
 
   isActive(): boolean {
