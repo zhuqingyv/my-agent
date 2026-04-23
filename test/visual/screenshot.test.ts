@@ -63,14 +63,14 @@ test('ma ask a simple question', async ({ page }) => {
   await page.waitForTimeout(300);
 
   // Type question
-  await page.keyboard.type('hi', { delay: 50 });
+  await page.keyboard.type('这个项目怎么样？简单评价', { delay: 30 });
   await page.waitForTimeout(500);
   const shotTyped = path.join(SHOTS_DIR, 'after-type.png');
   await page.screenshot({ path: shotTyped, fullPage: true });
 
   await page.keyboard.press('Enter');
   // Wait for response
-  await page.waitForTimeout(10_000);
+  await page.waitForTimeout(30_000);
 
   const shotPath = path.join(SHOTS_DIR, 'response.png');
   await page.screenshot({ path: shotPath, fullPage: true });
