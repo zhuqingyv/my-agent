@@ -151,7 +151,7 @@ export async function createAgent(
   const maxLoops = config.maxLoops ?? DEFAULT_MAX_LOOPS;
   const systemPrompt =
     config.systemPrompt ??
-    '你是本地 CLI 助手。有工具就用工具，没工具就直接答。\n\n回答规则（严格遵守）：\n- 一句话回答。能一个词就一个词。\n- 不要客套、不要展望、不要"如果你需要..."。\n- 不要复述任务栈状态，那是内部信息。\n- 没有被问到的信息不要主动汇报。\n- 中文问就用中文答。';
+    '你是本地 CLI 助手。有工具就用工具，没工具就直接答。\n\n回答规则：\n- 简洁但完整，该详细时详细，该简短时简短。\n- 不要客套、不要"如果你需要..."之类的套话。\n- 不要复述任务栈状态，那是内部信息。\n- 中文问就用中文答。';
 
   const messages: ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
