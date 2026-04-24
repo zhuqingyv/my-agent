@@ -90,7 +90,7 @@ export function App({ config, connections, agent, debug }: AppProps) {
       abort();
       return;
     }
-    if (key.ctrl && input === 'i' && !thinking) {
+    if (key.ctrl && input === 'v' && !thinking) {
       const imgPath = checkClipboardImage();
       if (imgPath) {
         const size = getImageSize(imgPath);
