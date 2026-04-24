@@ -10,12 +10,19 @@ interface InputBoxProps {
   pendingImages?: UiImage[];
 }
 
+const PASTE_JUNK = /\[200~|\[201~|\x1b\[200~|\x1b\[201~/g;
+
 export function InputBox({ onSubmit, disabled, pendingImages }: InputBoxProps) {
   const [value, setValue] = useState('');
 
+  const handleChange = useCallback((newVal: string) => {
+    const clean = newVal.replace(PASTE_JUNK, '');
+    setValue(clean);
+  }, []);
+
   const handleSubmit = useCallback(
     (text: string) => {
-      const trimmed = text.trim();
+      const trimmed = text.replace(PASTE_JUNK, '').trim();
       if (!trimmed && (!pendingImages || pendingImages.length === 0)) return;
       setValue('');
       onSubmit(trimmed);
@@ -42,7 +49,7 @@ export function InputBox({ onSubmit, disabled, pendingImages }: InputBoxProps) {
         ) : (
           <TextInput
             value={value}
-            onChange={setValue}
+            onChange={handleChange}
             onSubmit={handleSubmit}
           />
         )}
