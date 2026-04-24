@@ -11,7 +11,7 @@ const TEST_CWD = process.env.TEST_CWD ?? process.cwd();
 // Default: run the in-repo CLI via node to sidestep PATH/nvm issues.
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_CMD = process.execPath;
-const DEFAULT_ARGS = [path.join(PROJECT_ROOT, 'dist', 'src', 'cli.js')];
+const DEFAULT_ARGS = [path.join(PROJECT_ROOT, 'dist', 'src', 'cli', 'index.js')];
 const SHELL_CMD = process.env.VISUAL_CMD ?? DEFAULT_CMD;
 const SHELL_ARGS = process.env.VISUAL_ARGS
   ? process.env.VISUAL_ARGS.split(' ')
