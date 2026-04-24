@@ -35,8 +35,8 @@ export function InputBox({ onSubmit, disabled, pendingImages }: InputBoxProps) {
           <Text dimColor>(Ctrl+X 清除)</Text>
         </Box>
       ) : null}
-      <Box borderStyle="single" borderColor="gray" paddingX={1}>
-        <Text color="cyan">❯ </Text>
+      <Box borderStyle="single" borderColor="magenta" paddingX={1}>
+        <Text color="magenta">❯ </Text>
         {disabled ? (
           <Text dimColor>thinking...</Text>
         ) : (

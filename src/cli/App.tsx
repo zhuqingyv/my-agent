@@ -34,12 +34,7 @@ export function App({ config, connections, agent, debug }: AppProps) {
   const app = useApp();
   const store = useMemo(() => {
     const s = createUiStore();
-    const mcpStr = connections.map(c => `${c.name}(${c.tools.length})`).join(', ') || '(none)';
-    s.pushMessage({
-      kind: 'system',
-      id: 'banner',
-      text: `  MA  v1.0.0\n  model: ${config.model.model} · ${config.model.baseURL}\n  mcp:   ${mcpStr}`,
-    });
+    // no banner message — Banner component renders it
     return s;
   }, []);
   const { send, abort } = useAgent(agent, store);
@@ -117,6 +112,7 @@ export function App({ config, connections, agent, debug }: AppProps) {
 
   return (
     <Box flexDirection="column">
+      <Banner model={config.model.model} baseURL={config.model.baseURL} mcp={mcpList} />
       <ChatHistory messages={messages} />
 
       {inFlightText ? (
