@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import * as path from 'node:path';
 import { Box, Text } from 'ink';
-import TextInput from 'ink-text-input';
+import { CustomTextInput } from './CustomTextInput.js';
 import type { UiImage } from '../state/types.js';
 
 interface InputBoxProps {
@@ -47,10 +47,12 @@ export function InputBox({ onSubmit, disabled, pendingImages }: InputBoxProps) {
         {disabled ? (
           <Text dimColor>thinking...</Text>
         ) : (
-          <TextInput
+          <CustomTextInput
             value={value}
             onChange={handleChange}
             onSubmit={handleSubmit}
+            placeholder="输入消息或 /help 查看命令"
+            disabled={disabled}
           />
         )}
       </Box>
