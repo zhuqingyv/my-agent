@@ -67,14 +67,26 @@ function BlockToken({ token }: { token: Token }) {
     }
     case 'table': {
       const t = token as Tokens.Table;
-      const headerLine = t.header.map((c) => c.text).join(' │ ');
-      const divider = '─'.repeat(headerLine.length);
       return (
         <Box flexDirection="column" marginBottom={1}>
-          <Text bold>{headerLine}</Text>
-          <Text dimColor>{divider}</Text>
+          <Text bold>
+            {t.header.map((c, ci) => (
+              <React.Fragment key={ci}>
+                {ci > 0 ? <Text dimColor> │ </Text> : null}
+                <InlineTokens tokens={c.tokens ?? []} fallback={c.text} />
+              </React.Fragment>
+            ))}
+          </Text>
+          <Text dimColor>{'─'.repeat(50)}</Text>
           {t.rows.map((row, ri) => (
-            <Text key={ri}>{row.map((c) => c.text).join(' │ ')}</Text>
+            <Text key={ri}>
+              {row.map((c, ci) => (
+                <React.Fragment key={ci}>
+                  {ci > 0 ? <Text dimColor> │ </Text> : null}
+                  <InlineTokens tokens={c.tokens ?? []} fallback={c.text} />
+                </React.Fragment>
+              ))}
+            </Text>
           ))}
         </Box>
       );
