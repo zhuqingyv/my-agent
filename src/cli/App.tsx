@@ -85,7 +85,7 @@ export function App({ config, connections, agent, debug }: AppProps) {
       abort();
       return;
     }
-    if (key.ctrl && input === 'v' && !thinking) {
+    if ((input === '\x16' || (key.ctrl && input === 'v')) && !thinking) {
       const imgPath = checkClipboardImage();
       if (imgPath) {
         const size = getImageSize(imgPath);
@@ -96,7 +96,7 @@ export function App({ config, connections, agent, debug }: AppProps) {
       }
       return;
     }
-    if (key.ctrl && input === 'x' && pendingImages.length > 0) {
+    if ((input === '\x18' || (key.ctrl && input === 'x')) && pendingImages.length > 0) {
       setPendingImages([]);
       log('cleared pending images');
     }
