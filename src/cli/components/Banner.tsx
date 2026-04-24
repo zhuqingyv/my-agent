@@ -12,17 +12,14 @@ export function Banner({ model, baseURL, mcp }: BannerProps) {
     mcp.map((m) => `${m.name}(${m.toolCount})`).join(', ') || '(none)';
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Box borderStyle="round" borderColor="cyan" paddingX={2}>
-        <Text bold color="cyan">
-          my-agent
-        </Text>
-        <Text dimColor>  v1.0.0</Text>
-      </Box>
-      <Text dimColor>
-        {'  '}model:  <Text bold>{model}</Text>  {baseURL}
+      <Text>
+        {'  '}<Text bold color="cyan">MA</Text><Text dimColor>  v1.0.0</Text>
       </Text>
       <Text dimColor>
-        {'  '}mcp:    <Text color="green">{mcpStr}</Text>
+        {'  '}model: <Text bold color="white">{model}</Text> <Text dimColor>· {baseURL}</Text>
+      </Text>
+      <Text dimColor>
+        {'  '}mcp:   <Text color="green">{mcpStr}</Text>
       </Text>
     </Box>
   );

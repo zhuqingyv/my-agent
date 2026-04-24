@@ -26,19 +26,19 @@ export function InputBox({ onSubmit, disabled, pendingImages }: InputBoxProps) {
   return (
     <Box flexDirection="column">
       {pendingImages && pendingImages.length > 0 ? (
-        <Box paddingX={1}>
+        <Box paddingX={1} marginBottom={0}>
           {pendingImages.map((img, i) => (
             <Text key={i} color="yellow">
-              [img] {path.basename(img.path)} ({Math.round(img.size / 1024)}KB){' '}
+              📎 {path.basename(img.path)} ({Math.round(img.size / 1024)}KB){' '}
             </Text>
           ))}
           <Text dimColor>(Ctrl+X 清除)</Text>
         </Box>
       ) : null}
-      <Box borderStyle="round" borderColor="gray" paddingX={1}>
+      <Box borderStyle="single" borderColor="gray" paddingX={1}>
         <Text color="cyan">❯ </Text>
         {disabled ? (
-          <Text dimColor>(思考中...)</Text>
+          <Text dimColor>thinking...</Text>
         ) : (
           <TextInput
             value={value}

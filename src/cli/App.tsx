@@ -38,7 +38,7 @@ export function App({ config, connections, agent, debug }: AppProps) {
     s.pushMessage({
       kind: 'system',
       id: 'banner',
-      text: `  MA  v1.0.0\n  model: ${config.model.model}  ${config.model.baseURL}\n  mcp:   ${mcpStr}`,
+      text: `  MA  v1.0.0\n  model: ${config.model.model} · ${config.model.baseURL}\n  mcp:   ${mcpStr}`,
     });
     return s;
   }, []);
