@@ -1,9 +1,15 @@
-import React, { useCallback, useMemo, useSyncExternalStore } from 'react';
+import React, { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import type { AgentConfig, McpConnection, Agent } from '../mcp/types.js';
 import { createUiStore } from './state/store.js';
 import { useAgent } from './hooks/useAgent.js';
 import { useDebugLog } from './hooks/useDebugLog.js';
+import {
+  checkClipboardImage,
+  getImageSize,
+  imageToBase64DataUrl,
+} from './hooks/useClipboard.js';
+import type { UiImage } from './state/types.js';
 import { Banner } from './components/Banner.js';
 import { ChatHistory } from './components/ChatHistory.js';
 import { Markdown } from './components/Markdown.js';
@@ -42,6 +48,8 @@ export function App({ config, connections, agent, debug }: AppProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState);
   const { messages, thinking, inFlightText } = state;
 
+  const [pendingImages, setPendingImages] = useState<UiImage[]>([]);
+
   const handleSubmit = useCallback(
     (text: string) => {
       log(`submit: ${text}`);
@@ -59,15 +67,43 @@ export function App({ config, connections, agent, debug }: AppProps) {
         }
         return;
       }
-      send(text);
+      if (pendingImages.length > 0) {
+        const content = [
+          { type: 'text' as const, text },
+          ...pendingImages.map((img) => ({
+            type: 'image_url' as const,
+            image_url: { url: imageToBase64DataUrl(img.path) },
+          })),
+        ];
+        (send as any)(content);
+        setPendingImages([]);
+      } else {
+        send(text);
+      }
     },
-    [agent, connections, app, store, send, log]
+    [agent, connections, app, store, send, log, pendingImages]
   );
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (key.escape && thinking) {
       log('abort via ESC');
       abort();
+      return;
+    }
+    if (key.ctrl && input === 'i' && !thinking) {
+      const imgPath = checkClipboardImage();
+      if (imgPath) {
+        const size = getImageSize(imgPath);
+        setPendingImages((prev) => [...prev, { path: imgPath, size }]);
+        log(`clipboard image: ${imgPath} (${size}B)`);
+      } else {
+        log('clipboard: no image');
+      }
+      return;
+    }
+    if (key.ctrl && input === 'x' && pendingImages.length > 0) {
+      setPendingImages([]);
+      log('cleared pending images');
     }
   });
 
@@ -93,7 +129,11 @@ export function App({ config, connections, agent, debug }: AppProps) {
         <ThinkingBar event={thinking.event} startedAt={thinking.startedAt} />
       ) : null}
 
-      <InputBox onSubmit={handleSubmit} disabled={!!thinking} />
+      <InputBox
+        onSubmit={handleSubmit}
+        disabled={!!thinking}
+        pendingImages={pendingImages}
+      />
 
       <StatusBar
         model={config.model.model}

@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, extname, join, relative } from 'node:path';
 import { createInterface } from 'node:readline';
 
 type JsonRpcId = string | number | null;
@@ -84,9 +84,29 @@ const TOOLS: ToolDefinition[] = [
       required: ['path'],
     },
   },
+  {
+    name: 'read_image',
+    description: '读取图片文件并返回 base64 data URL，用于图片分析。最大支持 5MB。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '图片文件路径（必填）。' },
+      },
+      required: ['path'],
+    },
+  },
 ];
 
 const IGNORED_DIRS = new Set(['node_modules', '.git', 'dist']);
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.svg']);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function imageMime(ext: string): string {
+  if (ext === '.jpg') return 'image/jpeg';
+  if (ext === '.svg') return 'image/svg+xml';
+  if (ext === '.ico') return 'image/x-icon';
+  return `image/${ext.slice(1)}`;
+}
 
 function send(response: JsonRpcResponse): void {
   process.stdout.write(JSON.stringify(response) + '\n');
@@ -116,6 +136,26 @@ function handleReadFile(args: Record<string, unknown>) {
   if (typeof path !== 'string' || path.length === 0) {
     return textResult('请提供文件路径，例如: read_file(path: "./package.json")', true);
   }
+  const ext = extname(path).toLowerCase();
+  if (IMAGE_EXTENSIONS.has(ext)) {
+    try {
+      const st = statSync(path);
+      const mime = imageMime(ext);
+      return textResult(
+        `[图片文件] ${path}\n` +
+          `格式: ${mime}\n` +
+          `大小: ${Math.round(st.size / 1024)}KB\n` +
+          `提示: 这是一个图片文件，无法以文本形式读取。如需分析图片内容，请使用 read_image 获取 base64 data URL，或让用户通过剪贴板粘贴图片。`,
+      );
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') {
+        return textResult(`文件不存在: ${path}`, true);
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      return textResult(`read_file failed: ${msg}`, true);
+    }
+  }
   try {
     const content = readFileSync(path, { encoding: encoding as BufferEncoding });
     return textResult(content);
@@ -129,6 +169,38 @@ function handleReadFile(args: Record<string, unknown>) {
     }
     const msg = err instanceof Error ? err.message : String(err);
     return textResult(`read_file failed: ${msg}`, true);
+  }
+}
+
+function handleReadImage(args: Record<string, unknown>) {
+  const path = args.path;
+  if (typeof path !== 'string' || path.length === 0) {
+    return textResult('请提供图片文件路径', true);
+  }
+  const ext = extname(path).toLowerCase();
+  if (!IMAGE_EXTENSIONS.has(ext)) {
+    return textResult(`不是图片文件: ${path}`, true);
+  }
+  try {
+    const buf = readFileSync(path);
+    if (buf.length > MAX_IMAGE_BYTES) {
+      return textResult(
+        `图片太大（${Math.round(buf.length / 1024 / 1024)}MB），最大支持 5MB`,
+        true,
+      );
+    }
+    const mime = imageMime(ext);
+    return textResult(`data:${mime};base64,${buf.toString('base64')}`);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') {
+      return textResult(`文件不存在: ${path}`, true);
+    }
+    if (code === 'EISDIR') {
+      return textResult(`不是文件（是目录）: ${path}`, true);
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return textResult(`read_image failed: ${msg}`, true);
   }
 }
 
@@ -240,6 +312,8 @@ function dispatchToolCall(name: string, args: Record<string, unknown>) {
       return handleWriteFile(args);
     case 'list_directory':
       return handleListDirectory(args);
+    case 'read_image':
+      return handleReadImage(args);
     default:
       return textResult(`unknown tool: ${name}`, true);
   }

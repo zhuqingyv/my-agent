@@ -2,11 +2,13 @@ import OpenAI from 'openai';
 import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
+  ChatCompletionUserMessageParam,
 } from 'openai/resources/chat/completions';
 import type {
   Agent,
   AgentConfig,
   ArchivedMessage,
+  ChatContent,
   McpConnection,
 } from './mcp/types.js';
 import { createTaskStack, type Task, type TaskStack } from './task-stack.js';
@@ -197,11 +199,17 @@ export async function createAgent(
 
   async function* runTask(
     task: Task,
+    rootUserMessage: ChatContent,
     signal?: AbortSignal
   ): AsyncGenerator<AgentEvent, { text: string; hitMaxLoops: boolean }, unknown> {
-    const openingContent = task.parentId
-      ? `（子任务）${task.prompt}`
-      : task.prompt;
+    let openingContent: ChatCompletionUserMessageParam['content'];
+    if (task.parentId) {
+      openingContent = `（子任务）${task.prompt}`;
+    } else if (typeof rootUserMessage === 'string') {
+      openingContent = rootUserMessage;
+    } else {
+      openingContent = rootUserMessage as unknown as ChatCompletionUserMessageParam['content'];
+    }
     messages.push({ role: 'user', content: openingContent });
 
     let finalText = '';
@@ -331,12 +339,18 @@ export async function createAgent(
   }
 
   async function* chat(
-    userMessage: string,
+    userMessage: ChatContent,
     signal?: AbortSignal
   ): AsyncGenerator<AgentEvent, void, unknown> {
+    const rootPromptText =
+      typeof userMessage === 'string'
+        ? userMessage
+        : (userMessage.find((p) => p.type === 'text') as
+            | { type: 'text'; text: string }
+            | undefined)?.text || '[图片]';
     try {
       stack.push({
-        prompt: userMessage,
+        prompt: rootPromptText,
         messageAnchor: -1,
       });
     } catch (err) {
@@ -364,7 +378,7 @@ export async function createAgent(
       let aborted = false;
 
       try {
-        const gen = runTask(task, signal);
+        const gen = runTask(task, userMessage, signal);
         while (true) {
           const { value, done } = await gen.next();
           if (done) {

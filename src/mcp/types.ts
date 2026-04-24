@@ -55,9 +55,16 @@ export interface ArchivedMessage {
   [key: string]: unknown;
 }
 
+export type ChatContent =
+  | string
+  | Array<
+      | { type: 'text'; text: string }
+      | { type: 'image_url'; image_url: { url: string } }
+    >;
+
 export interface Agent {
   chat(
-    userMessage: string,
+    userMessage: ChatContent,
     signal?: AbortSignal
   ): AsyncGenerator<AgentEvent, void, unknown>;
   reset(): void;

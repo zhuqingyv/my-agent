@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import type { Agent } from '../../mcp/types.js';
+import type { Agent, ChatContent } from '../../mcp/types.js';
 import type { AgentEvent } from '../../agent/events.js';
 import type { UiStore } from '../state/store.js';
 
@@ -91,13 +91,19 @@ export function useAgent(agent: Agent, store: UiStore) {
   const abortRef = useRef<AbortController | null>(null);
 
   const send = useCallback(
-    async (text: string) => {
+    async (content: ChatContent) => {
+      const displayText =
+        typeof content === 'string'
+          ? content
+          : (content.find((p) => p.type === 'text') as
+              | { type: 'text'; text: string }
+              | undefined)?.text || '[图片]';
       abortRef.current = new AbortController();
-      store.pushMessage({ kind: 'user', id: nextId(), text });
+      store.pushMessage({ kind: 'user', id: nextId(), text: displayText });
       store.startThinking();
 
       try {
-        for await (const event of agent.chat(text, abortRef.current.signal)) {
+        for await (const event of agent.chat(content, abortRef.current.signal)) {
           applyEvent(store, event);
           if (abortRef.current.signal.aborted) break;
         }
