@@ -90,19 +90,68 @@ export function App({ config, connections, agent, debug }: AppProps) {
   thinkingRef.current = thinking;
 
   useEffect(() => {
-    const onData = (data: Buffer) => {
-      const ch = data.toString();
-      if (ch === '\x16' && !thinkingRef.current) {
-        const imgPath = checkClipboardImage();
-        if (imgPath) {
-          const size = getImageSize(imgPath);
-          setPendingImages((prev) => [...prev, { path: imgPath, size }]);
-          log(`clipboard image: ${imgPath} (${size}B)`);
-        } else {
-          log('clipboard: no image');
-        }
+    process.stdout.write('\x1b[?2004h');
+    return () => {
+      process.stdout.write('\x1b[?2004l');
+    };
+  }, []);
+
+  useEffect(() => {
+    const PASTE_START = '\x1b[200~';
+    const PASTE_END = '\x1b[201~';
+
+    let pasteBuffer = '';
+    let isPasting = false;
+
+    const tryReadClipboardImage = () => {
+      if (thinkingRef.current) return;
+      const imgPath = checkClipboardImage();
+      if (imgPath) {
+        const size = getImageSize(imgPath);
+        setPendingImages((prev) => [...prev, { path: imgPath, size }]);
+        log(`clipboard image: ${imgPath} (${size}B)`);
+      } else {
+        log('clipboard: no image');
       }
-      if (ch === '\x18') {
+    };
+
+    const handlePasteComplete = (content: string) => {
+      log(`bracketed paste: ${content.length}B`);
+      if (content.trim() === '' && process.platform === 'darwin') {
+        tryReadClipboardImage();
+      }
+    };
+
+    const onData = (data: Buffer) => {
+      const str = data.toString();
+
+      if (isPasting) {
+        pasteBuffer += str;
+        if (pasteBuffer.includes(PASTE_END)) {
+          const content = pasteBuffer.split(PASTE_END)[0];
+          handlePasteComplete(content);
+          isPasting = false;
+          pasteBuffer = '';
+        }
+        return;
+      }
+
+      if (str.includes(PASTE_START)) {
+        isPasting = true;
+        pasteBuffer = str.split(PASTE_START).slice(1).join('');
+        if (pasteBuffer.includes(PASTE_END)) {
+          const content = pasteBuffer.split(PASTE_END)[0];
+          handlePasteComplete(content);
+          isPasting = false;
+          pasteBuffer = '';
+        }
+        return;
+      }
+
+      if (str === '\x16') {
+        tryReadClipboardImage();
+      }
+      if (str === '\x18') {
         setPendingImages([]);
         log('cleared pending images');
       }
