@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import type { AgentConfig, McpConnection, Agent } from '../mcp/types.js';
 import { createUiStore } from './state/store.js';
@@ -79,28 +79,37 @@ export function App({ config, connections, agent, debug }: AppProps) {
     [agent, connections, app, store, send, log, pendingImages]
   );
 
-  useInput((input, key) => {
+  useInput((_input, key) => {
     if (key.escape && thinking) {
       log('abort via ESC');
       abort();
-      return;
-    }
-    if ((input === '\x16' || (key.ctrl && input === 'v')) && !thinking) {
-      const imgPath = checkClipboardImage();
-      if (imgPath) {
-        const size = getImageSize(imgPath);
-        setPendingImages((prev) => [...prev, { path: imgPath, size }]);
-        log(`clipboard image: ${imgPath} (${size}B)`);
-      } else {
-        log('clipboard: no image');
-      }
-      return;
-    }
-    if ((input === '\x18' || (key.ctrl && input === 'x')) && pendingImages.length > 0) {
-      setPendingImages([]);
-      log('cleared pending images');
     }
   });
+
+  const thinkingRef = useRef(thinking);
+  thinkingRef.current = thinking;
+
+  useEffect(() => {
+    const onData = (data: Buffer) => {
+      const ch = data.toString();
+      if (ch === '\x16' && !thinkingRef.current) {
+        const imgPath = checkClipboardImage();
+        if (imgPath) {
+          const size = getImageSize(imgPath);
+          setPendingImages((prev) => [...prev, { path: imgPath, size }]);
+          log(`clipboard image: ${imgPath} (${size}B)`);
+        } else {
+          log('clipboard: no image');
+        }
+      }
+      if (ch === '\x18') {
+        setPendingImages([]);
+        log('cleared pending images');
+      }
+    };
+    process.stdin.on('data', onData);
+    return () => { process.stdin.off('data', onData); };
+  }, [log]);
 
   const mcpList = connections.map((c) => ({
     name: c.name,
