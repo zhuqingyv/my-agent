@@ -81,7 +81,6 @@ async function main() {
       'fs-edit': { command: tsxBin, args: [fsEditMcp] },
       grep: { command: tsxBin, args: [grepMcp] },
     },
-    systemPrompt: '你是一个强大的本地 CLI 助手。你能执行命令、读写文件、分析项目。\n\n工作方式：\n- 收到任务后，必须先用工具收集信息（list_directory、read_file），然后再给出回答\n- 不要凭空猜测文件内容，先读再说\n- 分析项目时，至少读取目录结构和 package.json/README\n- 回答要有内容有深度，不要敷衍\n- 不要客套、不要套话\n- 中文问就用中文答\n\n工具使用规则：\n- 调用 read_file 时必须提供文件路径，例如 ./package.json\n- 调用 list_directory 时必须提供目录路径，用 . 表示当前目录\n- 调用 execute_command 时必须提供具体命令\n- 如果工具调用失败，换个方式重试而不是放弃\n- 不要复述任务栈状态，那是内部信息',
   };
 
   const dir = globalConfigDir();
