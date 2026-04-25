@@ -1,25 +1,14 @@
 #!/usr/bin/env node
-import { spawn, execSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { compressOutput } from './compress/index.js';
 
-const RTK_COMMANDS = ['git', 'ls', 'tree', 'find', 'grep', 'cat', 'head', 'tail',
-  'npm', 'cargo', 'pip', 'docker', 'kubectl', 'ps', 'df', 'du'];
-const MAX_OUTPUT = 30000;
-const TRUNCATE_NOTICE = '\n\n[...输出过长，已截断。建议用 head/tail/grep 筛选]';
+const MAX_OUTPUT = 200000;
+const TRUNCATE_NOTICE = '\n\n[...原始输出过长，已截断。建议用 head/tail/grep 筛选]';
 const SIGKILL_DELAY_MS = 5000;
 const DEFAULT_TIMEOUT_MS = 30000;
 const PROTOCOL_VERSION = '2024-11-05';
 const SERVER_INFO = { name: 'exec-mcp', version: '2.0.0' };
-
-const RTK_AVAILABLE = (() => {
-  try { execSync('which rtk', { stdio: 'ignore' }); return true; } catch { return false; }
-})();
-
-function wrapWithRtk(command: string): string {
-  if (!RTK_AVAILABLE) return command;
-  const first = command.trim().split(/\s/)[0];
-  return RTK_COMMANDS.includes(first) ? `rtk ${command}` : command;
-}
 
 interface JsonRpcRequest { jsonrpc: '2.0'; id?: number | string; method: string; params?: any; }
 interface JsonRpcResponse { jsonrpc: '2.0'; id: number | string; result?: any; error?: { code: number; message: string; data?: any }; }
@@ -53,14 +42,13 @@ function runCommand(args: ExecArgs): Promise<RunResult> {
   return new Promise((resolve) => {
     const timeout = typeof args.timeout === 'number' && args.timeout > 0 ? args.timeout : DEFAULT_TIMEOUT_MS;
     const cwd = args.cwd || process.cwd();
-    const actualCommand = wrapWithRtk(args.command);
 
     let output = '';
     let truncated = false;
     let timedOut = false;
     let sigkilled = false;
 
-    const proc = spawn('bash', ['-c', actualCommand], {
+    const proc = spawn('bash', ['-c', args.command], {
       cwd,
       env: { ...process.env, LANG: 'en_US.UTF-8' },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -135,7 +123,8 @@ async function handleToolsCall(params: any): Promise<any> {
     cwd: typeof args.cwd === 'string' ? args.cwd : undefined,
     timeout: typeof args.timeout === 'number' ? args.timeout : undefined,
   });
-  return { content: [{ type: 'text', text: text || '(no output)' }], isError };
+  const compressed = compressOutput(args.command, text);
+  return { content: [{ type: 'text', text: compressed }], isError };
 }
 
 async function handleRequest(req: JsonRpcRequest): Promise<void> {
@@ -165,7 +154,6 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
 }
 
 function main(): void {
-  if (!RTK_AVAILABLE) logErr('[exec-mcp] rtk not found, running commands without compression');
   const rl = createInterface({ input: process.stdin });
   let pending = 0;
   let stdinClosed = false;
