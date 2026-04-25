@@ -323,11 +323,20 @@ export async function createAgent(
         const short =
           toolResult.length > 400 ? toolResult.slice(0, 400) + '...' : toolResult;
         yield { type: 'tool:result', ok: !isError, content: short };
-        messages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: compactToolResult(toolResult),
-        });
+        const compacted = compactToolResult(toolResult);
+        if (compacted.startsWith('data:image/')) {
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: [{ type: 'image_url', image_url: { url: compacted } }] as any,
+          });
+        } else {
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: compacted,
+          });
+        }
       }
     }
 
