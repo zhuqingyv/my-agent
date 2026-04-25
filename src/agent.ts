@@ -223,10 +223,12 @@ export async function createAgent(
   const baseSystemPrompt =
     config.systemPrompt ??
     '你是一个强大的本地 CLI 助手。你能执行命令、读写文件、分析项目。\n\n工作方式：\n- 收到任务后，先用工具收集信息，再给出完整回答\n- 分析项目时，至少读取目录结构和 package.json/README，然后给出技术栈、功能、评价\n- 回答要有内容、有深度，不要敷衍\n- 不要客套、不要套话\n- 中文问就用中文答\n\n工具使用规则：\n- 调用 read_file 时必须提供文件路径，例如 ./package.json\n- 调用 list_directory 时必须提供目录路径，用 . 表示当前目录\n- 调用 execute_command 时必须提供具体命令\n- 如果工具调用失败，换个方式重试而不是放弃\n- 不要复述任务栈状态，那是内部信息';
-  const agentMd = loadAgentMd(process.cwd());
+  const cwd = process.cwd();
+  const agentMd = loadAgentMd(cwd);
+  const envInfo = `\n\n# Environment\n当前工作目录: ${cwd}\n平台: ${process.platform}\nNode: ${process.version}`;
   const systemPrompt = agentMd
-    ? `${baseSystemPrompt}\n\n# Project Context\n${agentMd}`
-    : baseSystemPrompt;
+    ? `${baseSystemPrompt}${envInfo}\n\n# Project Context\n${agentMd}`
+    : `${baseSystemPrompt}${envInfo}`;
 
   const messages: ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
