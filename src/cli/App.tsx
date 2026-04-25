@@ -201,7 +201,7 @@ export function App({ config, connections, agent, debug }: AppProps) {
       ) : null}
 
       {thinking ? (
-        <ThinkingBar event={thinking.event} startedAt={thinking.startedAt} />
+        <ThinkingBar event={thinking.event} startedAt={thinking.startedAt} thinking={thinking.isThinking} thoughtDurationMs={thinking.thoughtDurationMs} />
       ) : null}
 
       {pendingConfirm ? (

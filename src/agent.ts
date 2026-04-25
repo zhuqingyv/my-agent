@@ -398,13 +398,68 @@ export async function createAgent(
         { id: string; name: string; argsBuf: string }
       >();
 
+      let isThinking = false;
+      let thinkingStartTime = 0;
+      let thinkingBuf = '';
+
       for await (const chunk of stream as any) {
         const delta = chunk?.choices?.[0]?.delta;
         if (!delta) continue;
 
+        // Handle reasoning_content (Qwen thinking mode)
+        if (typeof (delta as any).reasoning_content === 'string') {
+          if (!isThinking) {
+            isThinking = true;
+            thinkingStartTime = Date.now();
+            yield { type: 'thinking:start' };
+          }
+          continue;
+        }
+
         if (typeof delta.content === 'string' && delta.content.length > 0) {
-          contentBuf += delta.content;
-          yield { type: 'token', text: delta.content };
+          // Detect thinking tokens (Gemma: <|channel>thought / <channel|>)
+          const cleaned = delta.content
+            .replace(/<\|channel>thought/g, '')
+            .replace(/<channel\|>/g, '')
+            .replace(/<\|channel>/g, '')
+            .replace(/<think>/g, '')
+            .replace(/<\/think>/g, '');
+
+          // Check if we're entering/exiting thinking
+          if (delta.content.includes('<|channel>thought') || delta.content.includes('<think>')) {
+            if (!isThinking) {
+              isThinking = true;
+              thinkingStartTime = Date.now();
+              yield { type: 'thinking:start' };
+            }
+            thinkingBuf += cleaned;
+            continue;
+          }
+
+          if (delta.content.includes('<channel|>') || delta.content.includes('</think>')) {
+            if (isThinking) {
+              isThinking = false;
+              yield { type: 'thinking:end', durationMs: Date.now() - thinkingStartTime };
+            }
+            // Output any remaining cleaned content
+            if (cleaned.trim()) {
+              contentBuf += cleaned;
+              yield { type: 'token', text: cleaned };
+            }
+            continue;
+          }
+
+          // If currently thinking, don't output to user
+          if (isThinking) {
+            thinkingBuf += cleaned;
+            continue;
+          }
+
+          // Normal content
+          if (cleaned.length > 0) {
+            contentBuf += cleaned;
+            yield { type: 'token', text: cleaned };
+          }
         }
 
         if (Array.isArray(delta.tool_calls)) {

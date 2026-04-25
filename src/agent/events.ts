@@ -7,6 +7,8 @@ export type AgentEvent =
   | { type: 'tool:result'; ok: boolean; content: string }
   | { type: 'token'; text: string }
   | { type: 'text'; content: string }
+  | { type: 'thinking:start' }
+  | { type: 'thinking:end'; durationMs: number }
   | { type: 'tool:confirm'; requestId: string; cmd: string; reason: string }
   | { type: 'compact:done'; freed: number }
   | { type: 'aborted' };

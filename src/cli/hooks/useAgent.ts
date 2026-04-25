@@ -113,6 +113,12 @@ function applyEvent(
       store.flushInFlight();
       store.pushMessage({ kind: 'system', id: nextId(), text: '[中断]' });
       break;
+    case 'thinking:start':
+      store.updateThinking({ event: store.getState().thinking?.event || '思考中', isThinking: true });
+      break;
+    case 'thinking:end':
+      store.updateThinking({ isThinking: false, thoughtDurationMs: event.durationMs });
+      break;
   }
 }
 

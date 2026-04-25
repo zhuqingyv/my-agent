@@ -22,4 +22,6 @@ export interface ThinkingState {
   event: string;
   toolName: string | null;
   startedAt: number;
+  isThinking?: boolean;
+  thoughtDurationMs?: number | null;
 }
