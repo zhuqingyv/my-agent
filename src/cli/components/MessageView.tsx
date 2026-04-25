@@ -4,6 +4,7 @@ import type { Message } from '../state/types.js';
 import { ToolProgress } from './ToolProgress.js';
 import { Separator } from './Separator.js';
 import { Markdown } from './Markdown.js';
+import { Banner } from './Banner.js';
 
 interface MessageViewProps {
   message: Message;
@@ -36,5 +37,7 @@ export function MessageView({ message }: MessageViewProps) {
       return <Text dimColor>{message.text}</Text>;
     case 'separator':
       return <Separator elapsed={message.elapsed} />;
+    case 'banner':
+      return <Banner model={message.data.model} baseURL={message.data.baseURL} mcp={message.data.mcp} />;
   }
 }

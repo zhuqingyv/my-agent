@@ -36,7 +36,12 @@ export function App({ config, connections, agent, debug }: AppProps) {
   const app = useApp();
   const store = useMemo(() => {
     const s = createUiStore();
-    // no banner message — Banner component renders it
+    const mcpStr = connections.map(c => ({ name: c.name, toolCount: c.tools.length }));
+    s.pushMessage({
+      kind: 'banner',
+      id: 'banner',
+      data: { model: config.model.model, baseURL: config.model.baseURL, mcp: mcpStr },
+    });
     return s;
   }, []);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
@@ -187,7 +192,6 @@ export function App({ config, connections, agent, debug }: AppProps) {
 
   return (
     <Box flexDirection="column">
-      <Banner model={config.model.model} baseURL={config.model.baseURL} mcp={mcpList} />
       <ChatHistory messages={messages} />
 
       {inFlightText ? (
