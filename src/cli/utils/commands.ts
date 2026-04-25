@@ -1,44 +1,35 @@
-import type { Agent, McpConnection } from '../../mcp/types.js';
+import type { Agent, AgentConfig, McpConnection } from '../../mcp/types.js';
 
 interface CommandContext {
   agent: Agent;
   connections: McpConnection[];
+  config: AgentConfig;
   exit: () => void;
+  setModel?: (model: string) => void;
 }
 
 interface Command {
   description: string;
-  handler: (args: string, ctx: CommandContext) => string | null;
+  handler: (args: string, ctx: CommandContext) => Promise<string | null> | string | null;
 }
 
 const commands = new Map<string, Command>();
 
 commands.set('/quit', {
   description: 'Exit',
-  handler: (_, ctx) => {
-    ctx.exit();
-    return null;
-  },
+  handler: (_, ctx) => { ctx.exit(); return null; },
 });
 
 commands.set('/exit', {
   description: 'Exit',
-  handler: (_, ctx) => {
-    ctx.exit();
-    return null;
-  },
+  handler: (_, ctx) => { ctx.exit(); return null; },
 });
 
 commands.set('/tools', {
   description: 'List tools',
   handler: (_, ctx) => {
     return ctx.connections
-      .map(
-        (c) =>
-          `${c.name} (${c.tools.length} tools)\n${c.tools
-            .map((t) => `  - ${t.name}${t.description ? ': ' + t.description : ''}`)
-            .join('\n')}`
-      )
+      .map(c => `${c.name} (${c.tools.length} tools)\n${c.tools.map(t => `  - ${t.name}${t.description ? ': ' + t.description : ''}`).join('\n')}`)
       .join('\n\n');
   },
 });
@@ -53,26 +44,15 @@ commands.set('/stack', {
     if (!cur && pending.length === 0 && history.length === 0) return 'Task stack is empty';
     let out = '';
     if (cur) out += `current: ${cur.id} ${cur.prompt}\n`;
-    if (pending.length > 0)
-      out += `pending (${pending.length}):\n${pending
-        .reverse()
-        .map((t) => `  ${t.id} ${t.prompt}`)
-        .join('\n')}\n`;
-    if (history.length > 0)
-      out += `completed:\n${history
-        .reverse()
-        .map((t) => `  ${t.id} ${t.prompt}`)
-        .join('\n')}`;
+    if (pending.length > 0) out += `pending (${pending.length}):\n${pending.reverse().map(t => `  ${t.id} ${t.prompt}`).join('\n')}\n`;
+    if (history.length > 0) out += `completed:\n${history.reverse().map(t => `  ${t.id} ${t.prompt}`).join('\n')}`;
     return out.trim();
   },
 });
 
 commands.set('/abort', {
   description: 'Clear pending tasks',
-  handler: (_, ctx) => {
-    const n = ctx.agent.abortAll();
-    return `Aborted ${n} pending tasks`;
-  },
+  handler: (_, ctx) => { const n = ctx.agent.abortAll(); return `Aborted ${n} pending tasks`; },
 });
 
 commands.set('/archive', {
@@ -88,9 +68,39 @@ commands.set('/archive', {
 
 commands.set('/clear', {
   description: 'Clear conversation',
-  handler: (_, ctx) => {
-    ctx.agent.reset();
-    return '[cleared]';
+  handler: (_, ctx) => { ctx.agent.reset(); return '[cleared]'; },
+});
+
+commands.set('/models', {
+  description: 'List available models',
+  handler: async (_, ctx) => {
+    try {
+      const res = await fetch(`${ctx.config.model.baseURL}/models`);
+      const data = await res.json() as { data: Array<{ id: string }> };
+      const current = ctx.config.model.model;
+      return data.data.map(m => m.id === current ? `* ${m.id} (current)` : `  ${m.id}`).join('\n');
+    } catch (err) {
+      return `Failed to fetch models: ${(err as Error).message}`;
+    }
+  },
+});
+
+commands.set('/model', {
+  description: 'Switch model',
+  handler: async (args, ctx) => {
+    const name = args.trim();
+    if (!name) return `Current model: ${ctx.config.model.model}\nUsage: /model <name>`;
+    try {
+      const res = await fetch(`${ctx.config.model.baseURL}/models`);
+      const data = await res.json() as { data: Array<{ id: string }> };
+      const found = data.data.find(m => m.id === name);
+      if (!found) return `Model "${name}" not found. Use /models to list available.`;
+      ctx.config.model.model = name;
+      ctx.setModel?.(name);
+      return `Switched to: ${name}`;
+    } catch (err) {
+      return `Failed: ${(err as Error).message}`;
+    }
   },
 });
 
@@ -98,7 +108,7 @@ export function isCommand(input: string): boolean {
   return input.startsWith('/');
 }
 
-export function executeCommand(input: string, ctx: CommandContext): string | null {
+export async function executeCommand(input: string, ctx: CommandContext): Promise<string | null> {
   const spaceIdx = input.indexOf(' ');
   const name = spaceIdx > 0 ? input.slice(0, spaceIdx) : input;
   const args = spaceIdx > 0 ? input.slice(spaceIdx + 1) : '';

@@ -26,6 +26,27 @@ export async function bootstrap(
   const { config, sources, createdDefault } = loadConfigDetailed(configPath);
   const resolved = resolveConfigPath(configPath);
 
+  // Auto-detect model from server
+  try {
+    const res = await fetch(`${config.model.baseURL}/models`);
+    const data = await res.json() as { data: Array<{ id: string }> };
+    const available = data.data.map(m => m.id);
+    if (available.length > 0) {
+      const configured = config.model.model;
+      if (available.includes(configured)) {
+        // configured model available, keep it
+      } else if (available.length === 1) {
+        config.model.model = available[0];
+        process.stderr.write(`\x1b[33m[info] auto-selected model: ${available[0]}\x1b[0m\n`);
+      } else {
+        config.model.model = available[0];
+        process.stderr.write(`\x1b[33m[info] "${configured}" not found, using: ${available[0]}\x1b[0m\n`);
+      }
+    }
+  } catch {
+    // server unreachable, keep config as-is
+  }
+
   const entries = Object.entries(config.mcpServers ?? {}) as Array<[string, McpServerConfig]>;
   const connections: McpConnection[] = [];
   for (const [name, serverConfig] of entries) {

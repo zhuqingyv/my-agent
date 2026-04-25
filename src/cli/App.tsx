@@ -63,17 +63,20 @@ export function App({ config, connections, agent, debug }: AppProps) {
     (text: string) => {
       log(`submit: ${text}`);
       if (isCommand(text)) {
-        const result = executeCommand(text, {
-          agent,
-          connections,
-          exit: () => app.exit(),
-        });
-        if (text === '/clear') {
-          store.clearMessages();
-        }
-        if (result !== null) {
-          store.pushMessage({ kind: 'system', id: nextSysId(), text: result });
-        }
+        (async () => {
+          const result = await executeCommand(text, {
+            agent,
+            connections,
+            config,
+            exit: () => app.exit(),
+          });
+          if (text === '/clear') {
+            store.clearMessages();
+          }
+          if (result !== null) {
+            store.pushMessage({ kind: 'system', id: nextSysId(), text: result });
+          }
+        })();
         return;
       }
       if (pendingImages.length > 0) {
