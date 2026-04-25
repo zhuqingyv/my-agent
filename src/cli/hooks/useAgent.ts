@@ -3,15 +3,44 @@ import type { Agent, ChatContent } from '../../mcp/types.js';
 import type { AgentEvent } from '../../agent/events.js';
 import type { UiStore } from '../state/store.js';
 
+export interface PendingConfirm {
+  requestId: string;
+  cmd: string;
+  reason: string;
+}
+
+export interface UseAgentOptions {
+  onConfirm?: (c: PendingConfirm) => void;
+}
+
 let msgCounter = 0;
 function nextId() {
   return `m_${++msgCounter}`;
 }
 
-function applyEvent(store: UiStore, event: AgentEvent) {
+function applyEvent(
+  store: UiStore,
+  event: AgentEvent,
+  opts: UseAgentOptions
+) {
   switch (event.type) {
     case 'task:start':
       store.updateThinking({ event: event.prompt.slice(0, 60) || '执行任务' });
+      break;
+    case 'tool:confirm':
+      store.updateThinking({ event: '等待用户确认' });
+      opts.onConfirm?.({
+        requestId: event.requestId,
+        cmd: event.cmd,
+        reason: event.reason,
+      });
+      break;
+    case 'compact:done':
+      store.pushMessage({
+        kind: 'system',
+        id: nextId(),
+        text: `[compact] freed ~${event.freed} tokens`,
+      });
       break;
     case 'tool:call':
       store.updateThinking({
@@ -87,8 +116,14 @@ function applyEvent(store: UiStore, event: AgentEvent) {
   }
 }
 
-export function useAgent(agent: Agent, store: UiStore) {
+export function useAgent(
+  agent: Agent,
+  store: UiStore,
+  options: UseAgentOptions = {}
+) {
   const abortRef = useRef<AbortController | null>(null);
+  const optsRef = useRef<UseAgentOptions>(options);
+  optsRef.current = options;
 
   const send = useCallback(
     async (content: ChatContent) => {
@@ -104,7 +139,7 @@ export function useAgent(agent: Agent, store: UiStore) {
 
       try {
         for await (const event of agent.chat(content, abortRef.current.signal)) {
-          applyEvent(store, event);
+          applyEvent(store, event, optsRef.current);
           if (abortRef.current.signal.aborted) break;
         }
       } catch (err: any) {

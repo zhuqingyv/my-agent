@@ -1,7 +1,12 @@
 import { loadConfigDetailed, resolveConfigPath } from './config.js';
 import { connectMcpServer } from './mcp/client.js';
 import { createAgent } from './agent.js';
+import { createSessionStore } from './session/store.js';
 import type { AgentConfig, McpConnection, Agent, McpServerConfig } from './mcp/types.js';
+
+export interface BootstrapOptions {
+  resume?: string | true;
+}
 
 export interface BootstrapResult {
   config: AgentConfig;
@@ -10,9 +15,14 @@ export interface BootstrapResult {
   createdDefault: boolean;
   connections: McpConnection[];
   agent: Agent;
+  sessionId: string;
+  resumed: boolean;
 }
 
-export async function bootstrap(configPath?: string): Promise<BootstrapResult> {
+export async function bootstrap(
+  configPath?: string,
+  opts: BootstrapOptions = {}
+): Promise<BootstrapResult> {
   const { config, sources, createdDefault } = loadConfigDetailed(configPath);
   const resolved = resolveConfigPath(configPath);
 
@@ -28,9 +38,57 @@ export async function bootstrap(configPath?: string): Promise<BootstrapResult> {
     }
   }
 
-  const agent = await createAgent(config, connections);
+  const sessionStore = createSessionStore();
+  let sessionId: string;
+  let resumeMessages: any[] | undefined;
+  let resumed = false;
 
-  return { config, configPath: resolved, configSources: sources, createdDefault, connections, agent };
+  if (opts.resume !== undefined) {
+    const target = typeof opts.resume === 'string' ? opts.resume : sessionStore.latest();
+    if (target) {
+      const msgs = sessionStore.load(target);
+      if (msgs.length > 0) {
+        resumeMessages = msgs;
+        sessionId = target;
+        resumed = true;
+      } else {
+        sessionId = sessionStore.create({
+          createdAt: Date.now(),
+          cwd: process.cwd(),
+          model: config.model.model,
+        });
+      }
+    } else {
+      sessionId = sessionStore.create({
+        createdAt: Date.now(),
+        cwd: process.cwd(),
+        model: config.model.model,
+      });
+    }
+  } else {
+    sessionId = sessionStore.create({
+      createdAt: Date.now(),
+      cwd: process.cwd(),
+      model: config.model.model,
+    });
+  }
+
+  const agent = await createAgent(config, connections, {
+    resumeMessages,
+    sessionStore,
+    sessionId,
+  });
+
+  return {
+    config,
+    configPath: resolved,
+    configSources: sources,
+    createdDefault,
+    connections,
+    agent,
+    sessionId,
+    resumed,
+  };
 }
 
 export async function shutdown(connections: McpConnection[]): Promise<void> {

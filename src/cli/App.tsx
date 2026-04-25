@@ -16,6 +16,8 @@ import { Markdown } from './components/Markdown.js';
 import { ThinkingBar } from './components/ThinkingBar.js';
 import { InputBox } from './components/InputBox.js';
 import { StatusBar } from './components/StatusBar.js';
+import { ConfirmDialog } from './components/ConfirmDialog.js';
+import type { PendingConfirm } from './hooks/useAgent.js';
 import { isCommand, executeCommand } from './utils/commands.js';
 
 export interface AppProps {
@@ -37,13 +39,25 @@ export function App({ config, connections, agent, debug }: AppProps) {
     // no banner message — Banner component renders it
     return s;
   }, []);
-  const { send, abort } = useAgent(agent, store);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const { send, abort } = useAgent(agent, store, {
+    onConfirm: (c) => setPendingConfirm(c),
+  });
   const log = useDebugLog(!!debug);
 
   const state = useSyncExternalStore(store.subscribe, store.getState);
   const { messages, thinking, inFlightText } = state;
 
   const [pendingImages, setPendingImages] = useState<UiImage[]>([]);
+
+  const handleConfirm = useCallback(
+    (approved: boolean) => {
+      if (!pendingConfirm) return;
+      agent.respondConfirm(pendingConfirm.requestId, approved);
+      setPendingConfirm(null);
+    },
+    [agent, pendingConfirm]
+  );
 
   const handleSubmit = useCallback(
     (text: string) => {
@@ -183,9 +197,17 @@ export function App({ config, connections, agent, debug }: AppProps) {
         <ThinkingBar event={thinking.event} startedAt={thinking.startedAt} />
       ) : null}
 
+      {pendingConfirm ? (
+        <ConfirmDialog
+          cmd={pendingConfirm.cmd}
+          reason={pendingConfirm.reason}
+          onConfirm={handleConfirm}
+        />
+      ) : null}
+
       <InputBox
         onSubmit={handleSubmit}
-        disabled={!!thinking}
+        disabled={!!thinking || !!pendingConfirm}
         pendingImages={pendingImages}
       />
 

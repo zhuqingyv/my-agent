@@ -9,6 +9,7 @@ import pc from 'picocolors';
 import figures from 'figures';
 import { bootstrap, shutdown } from '../index.js';
 import { writeGlobalConfig } from '../config.js';
+import { createSessionStore } from '../session/store.js';
 import type { BootstrapResult } from '../index.js';
 import type { McpConnection } from '../mcp/types.js';
 import { App } from './App.js';
@@ -17,7 +18,20 @@ const VERSION = '1.0.0';
 
 let activeConnections: McpConnection[] = [];
 
-async function runChat(configPath: string | undefined, debug: boolean): Promise<void> {
+function parseResume(raw: string | boolean | undefined): string | true | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === true || raw === '') return true;
+  if (typeof raw === 'string') return raw;
+  return true;
+}
+
+interface RunChatOptions {
+  debug: boolean;
+  resume?: string | true;
+}
+
+async function runChat(configPath: string | undefined, runOpts: RunChatOptions): Promise<void> {
+  const { debug, resume } = runOpts;
   if (debug) {
     const logDir = path.join(os.homedir(), '.my-agent');
     fs.mkdirSync(logDir, { recursive: true });
@@ -26,17 +40,22 @@ async function runChat(configPath: string | undefined, debug: boolean): Promise<
 
   let boot: BootstrapResult;
   try {
-    boot = await bootstrap(configPath);
+    boot = await bootstrap(configPath, { resume });
   } catch (err) {
     console.error(pc.red(`[error] ${(err as Error).message}`));
     process.exit(1);
   }
 
-  const { config, createdDefault, connections, agent } = boot;
+  const { config, createdDefault, connections, agent, sessionId, resumed } = boot;
   activeConnections = connections;
 
   if (createdDefault) {
     console.log(pc.yellow(`Created ~/.my-agent/config.json — edit model settings there.`));
+  }
+  if (resumed) {
+    console.log(pc.dim(`resumed session ${sessionId}`));
+  } else {
+    console.log(pc.dim(`session ${sessionId}`));
   }
 
   const { waitUntilExit } = render(
@@ -67,16 +86,44 @@ async function main(): Promise<void> {
     .command('chat')
     .description('Start interactive chat session')
     .option('-c, --config <path>', 'path to config file')
-    .action(async (opts: { config?: string }) => {
-      await runChat(opts.config, false);
+    .option('--resume [id]', 'resume a saved session (empty = latest)')
+    .action(async (opts: { config?: string; resume?: string | boolean }) => {
+      const resume = parseResume(opts.resume);
+      await runChat(opts.config, { debug: false, resume });
     });
 
   program
     .command('dev')
     .description('Start chat with debug logging to ~/.my-agent/debug.log')
     .option('-c, --config <path>', 'path to config file')
-    .action(async (opts: { config?: string }) => {
-      await runChat(opts.config, true);
+    .option('--resume [id]', 'resume a saved session (empty = latest)')
+    .action(async (opts: { config?: string; resume?: string | boolean }) => {
+      const resume = parseResume(opts.resume);
+      await runChat(opts.config, { debug: true, resume });
+    });
+
+  program
+    .command('sessions')
+    .description('List saved sessions')
+    .option('--prune', 'delete old sessions, keeping the most recent 20')
+    .action((opts: { prune?: boolean }) => {
+      const store = createSessionStore();
+      if (opts.prune) {
+        const removed = store.prune(20);
+        console.log(pc.green(`${figures.tick} pruned ${removed} session(s)`));
+        return;
+      }
+      const list = store.list(10);
+      if (list.length === 0) {
+        console.log(pc.dim('no sessions'));
+        return;
+      }
+      for (const m of list) {
+        const when = new Date(m.createdAt).toISOString().replace('T', ' ').slice(0, 19);
+        console.log(
+          `${pc.cyan(m.id)}  ${pc.dim(when)}  ${pc.dim(m.model)}  ${pc.dim(`${m.messageCount} msg`)}  ${m.cwd}`
+        );
+      }
     });
 
   program
@@ -100,9 +147,12 @@ async function main(): Promise<void> {
       console.log(VERSION);
     });
 
-  program.action(async () => {
-    await runChat(undefined, false);
-  });
+  program
+    .option('--resume [id]', 'resume a saved session (empty = latest)')
+    .action(async (opts: { resume?: string | boolean }) => {
+      const resume = parseResume(opts.resume);
+      await runChat(undefined, { debug: false, resume });
+    });
 
   await program.parseAsync(process.argv);
 }

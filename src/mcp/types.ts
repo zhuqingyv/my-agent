@@ -40,6 +40,12 @@ export interface ModelConfig {
   apiKey: string;
   temperature?: number;
   frequencyPenalty?: number;
+  contextWindow?: number;
+}
+
+export interface DangerConfig {
+  mode?: 'confirm' | 'deny' | 'off';
+  allow?: string[];
 }
 
 export interface AgentConfig {
@@ -47,6 +53,7 @@ export interface AgentConfig {
   mcpServers: Record<string, McpServerConfig>;
   systemPrompt?: string;
   maxLoops?: number;
+  danger?: DangerConfig;
 }
 
 export interface ArchivedMessage {
@@ -71,4 +78,5 @@ export interface Agent {
   getTaskStack(): TaskStack;
   getArchive(taskId: string): ArchivedMessage[] | null;
   abortAll(): number;
+  respondConfirm(requestId: string, approved: boolean): void;
 }

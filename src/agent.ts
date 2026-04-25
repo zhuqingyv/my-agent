@@ -19,15 +19,57 @@ import {
   normalizeToolCalls,
 } from './agent/normalize.js';
 import { compactToolResult } from './agent/compact.js';
+import { classifyCommand, isWhitelisted } from './agent/dangerGuard.js';
 import {
   STACK_STATE_PREFIX,
   renderStackState,
   removeLastStackStateMessage,
 } from './agent/stack-render.js';
+import { loadAgentMd } from './agent/memdir.js';
+import { estimateTokens } from './agent/tokenCount.js';
+import { summarizeRange } from './agent/summarize.js';
+import type { SessionStore } from './session/store.js';
+
+export interface CreateAgentOptions {
+  resumeMessages?: ChatCompletionMessageParam[];
+  sessionStore?: SessionStore;
+  sessionId?: string;
+}
 
 const TOOL_NAME_SEP = '__';
 const DEFAULT_MAX_LOOPS = 20;
 const CREATE_TASK_TOOL_NAME = 'create_task';
+const DANGER_EXEC_TOOLS = new Set<string>([
+  'exec-mcp__execute_command',
+  'exec__execute_command',
+]);
+
+function extractCommand(args: Record<string, any>): string {
+  if (!args) return '';
+  if (typeof args.command === 'string') return args.command;
+  if (typeof args.cmd === 'string') return args.cmd;
+  return '';
+}
+
+function isTtyInteractive(): boolean {
+  return Boolean((process.stdin as any)?.isTTY);
+}
+const DEFAULT_CONTEXT_WINDOW = 32768;
+const COMPACT_TRIGGER_RATIO = 0.75;
+const COMPACT_KEEP_LAST_N = 6;
+const COMPACT_MAX_FAILURES = 2;
+const COMPACT_MIN_SUMMARY_CHARS = 50;
+
+function findSafeCutIndex(
+  messages: ChatCompletionMessageParam[],
+  desiredCut: number
+): number {
+  let cut = Math.max(1, Math.min(desiredCut, messages.length));
+  while (cut < messages.length && messages[cut].role === 'tool') {
+    cut += 1;
+  }
+  return cut;
+}
 
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -164,7 +206,8 @@ function routeToolCall(
 
 export async function createAgent(
   config: AgentConfig,
-  connections: McpConnection[]
+  connections: McpConnection[],
+  options: CreateAgentOptions = {}
 ): Promise<Agent> {
   const client = new OpenAI({
     baseURL: config.model.baseURL,
@@ -177,15 +220,117 @@ export async function createAgent(
     ...[...builtinTools.values()].map((b) => b.definition),
   ];
   const maxLoops = config.maxLoops ?? DEFAULT_MAX_LOOPS;
-  const systemPrompt =
+  const baseSystemPrompt =
     config.systemPrompt ??
     '你是一个强大的本地 CLI 助手。你能执行命令、读写文件、分析项目。\n\n工作方式：\n- 收到任务后，先用工具收集信息，再给出完整回答\n- 分析项目时，至少读取目录结构和 package.json/README，然后给出技术栈、功能、评价\n- 回答要有内容、有深度，不要敷衍\n- 不要客套、不要套话\n- 中文问就用中文答\n\n工具使用规则：\n- 调用 read_file 时必须提供文件路径，例如 ./package.json\n- 调用 list_directory 时必须提供目录路径，用 . 表示当前目录\n- 调用 execute_command 时必须提供具体命令\n- 如果工具调用失败，换个方式重试而不是放弃\n- 不要复述任务栈状态，那是内部信息';
+  const agentMd = loadAgentMd(process.cwd());
+  const systemPrompt = agentMd
+    ? `${baseSystemPrompt}\n\n# Project Context\n${agentMd}`
+    : baseSystemPrompt;
 
   const messages: ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
   ];
+  if (options.resumeMessages && options.resumeMessages.length > 0) {
+    for (const m of options.resumeMessages) {
+      if (m.role === 'system') continue;
+      messages.push(m);
+    }
+  }
+  const sessionStore = options.sessionStore;
+  const sessionId = options.sessionId;
+  let persistedCount = messages.length;
+
+  function persistPending(): void {
+    if (!sessionStore || !sessionId) {
+      persistedCount = messages.length;
+      return;
+    }
+    for (let i = persistedCount; i < messages.length; i++) {
+      const m = messages[i];
+      if (m.role === 'system') continue;
+      try {
+        sessionStore.append(sessionId, m);
+      } catch {
+        /* ignore persist failures */
+      }
+    }
+    persistedCount = messages.length;
+  }
+
   const stack = createTaskStack();
   const taskArchive = new Map<string, ChatCompletionMessageParam[]>();
+  const pendingConfirms = new Map<string, (approved: boolean) => void>();
+  let confirmCounter = 0;
+  const nextConfirmId = () => `cf_${++confirmCounter}`;
+
+  function respondConfirm(requestId: string, approved: boolean): void {
+    const resolver = pendingConfirms.get(requestId);
+    if (!resolver) return;
+    pendingConfirms.delete(requestId);
+    resolver(approved);
+  }
+
+  function awaitConfirm(
+    requestId: string,
+    signal?: AbortSignal
+  ): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      pendingConfirms.set(requestId, resolve);
+      if (signal) {
+        const onAbort = () => {
+          if (pendingConfirms.delete(requestId)) resolve(false);
+        };
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+  }
+  const contextWindow = config.model.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+  const compactThreshold = Math.floor(contextWindow * COMPACT_TRIGGER_RATIO);
+  let compactFailures = 0;
+  let compactDisabled = false;
+
+  async function maybeCompact(
+    signal?: AbortSignal
+  ): Promise<{ compacted: boolean; freed: number }> {
+    if (compactDisabled) return { compacted: false, freed: 0 };
+    const before = estimateTokens(messages);
+    if (before <= compactThreshold) return { compacted: false, freed: 0 };
+
+    const keepLastN = Math.min(COMPACT_KEEP_LAST_N, messages.length - 1);
+    const desiredCut = messages.length - keepLastN;
+    const cut = findSafeCutIndex(messages, desiredCut);
+    if (cut <= 1 || cut >= messages.length) return { compacted: false, freed: 0 };
+
+    const middle = messages.slice(1, cut);
+    if (middle.length === 0) return { compacted: false, freed: 0 };
+
+    try {
+      const summary = await summarizeRange(
+        client,
+        config.model.model,
+        middle,
+        signal
+      );
+      if (!summary || summary.length < COMPACT_MIN_SUMMARY_CHARS) {
+        compactFailures += 1;
+        if (compactFailures >= COMPACT_MAX_FAILURES) compactDisabled = true;
+        return { compacted: false, freed: 0 };
+      }
+      messages.splice(1, cut - 1, {
+        role: 'system',
+        content: `[compact summary]\n${summary}`,
+      });
+      compactFailures = 0;
+      const after = estimateTokens(messages);
+      return { compacted: true, freed: Math.max(0, before - after) };
+    } catch {
+      compactFailures += 1;
+      if (compactFailures >= COMPACT_MAX_FAILURES) compactDisabled = true;
+      return { compacted: false, freed: 0 };
+    }
+  }
 
   function foldMessages(anchor: number, taskId: string, summary: string): void {
     if (anchor < 0 || anchor > messages.length) return;
@@ -195,6 +340,7 @@ export async function createAgent(
       role: 'system',
       content: `[stack:completed ${taskId}] Summary: ${summary}`,
     });
+    persistedCount = messages.length;
   }
 
   async function* runTask(
@@ -211,11 +357,18 @@ export async function createAgent(
       openingContent = rootUserMessage as unknown as ChatCompletionUserMessageParam['content'];
     }
     messages.push({ role: 'user', content: openingContent });
+    persistPending();
 
     let finalText = '';
 
     for (let loop = 0; loop < maxLoops; loop++) {
       removeLastStackStateMessage(messages);
+
+      const compactResult = await maybeCompact(signal);
+      if (compactResult.compacted) {
+        yield { type: 'compact:done', freed: compactResult.freed };
+      }
+
       const stateStr = renderStackState(stack);
       if (stateStr) {
         messages.push({ role: 'system', content: stateStr });
@@ -280,6 +433,7 @@ export async function createAgent(
 
       if (!toolCalls) {
         messages.push({ role: 'assistant', content: contentBuf });
+        persistPending();
         finalText = contentBuf;
         return { text: finalText, hitMaxLoops: false };
       }
@@ -295,27 +449,61 @@ export async function createAgent(
         const args = normalizeArguments(tc.function.arguments);
         yield { type: 'tool:call', name: fullName, args };
 
-        let toolResult: string;
+        let toolResult = '';
         let isError = false;
+        let skipExecute = false;
 
-        const builtin = builtinTools.get(fullName);
-        if (builtin) {
-          const r = builtin.handler(args, { stack, currentTask: task });
-          toolResult = r.content;
-          isError = r.isError;
-        } else {
-          const route = routeToolCall(connections, fullName);
-          if (!route) {
-            toolResult = `Error: unknown tool '${fullName}'`;
-            isError = true;
+        if (DANGER_EXEC_TOOLS.has(fullName)) {
+          const cmd = extractCommand(args);
+          const mode = config.danger?.mode ?? 'confirm';
+          if (cmd && mode !== 'off') {
+            const allow = config.danger?.allow;
+            const result = classifyCommand(cmd);
+            if (result.dangerous && !isWhitelisted(cmd, allow)) {
+              const reason = result.reason ?? 'dangerous command';
+              if (mode === 'deny' || !isTtyInteractive()) {
+                toolResult = `[blocked] ${reason}`;
+                isError = true;
+                skipExecute = true;
+              } else {
+                const requestId = nextConfirmId();
+                yield {
+                  type: 'tool:confirm',
+                  requestId,
+                  cmd,
+                  reason,
+                };
+                const approved = await awaitConfirm(requestId, signal);
+                if (!approved) {
+                  toolResult = `[user denied] ${reason}`;
+                  isError = true;
+                  skipExecute = true;
+                }
+              }
+            }
+          }
+        }
+
+        if (!skipExecute) {
+          const builtin = builtinTools.get(fullName);
+          if (builtin) {
+            const r = builtin.handler(args, { stack, currentTask: task });
+            toolResult = r.content;
+            isError = r.isError;
           } else {
-            try {
-              const r = await route.conn.call(route.toolName, args, signal);
-              toolResult = r.content;
-              isError = r.isError;
-            } catch (err) {
-              toolResult = `Error: ${(err as Error).message}`;
+            const route = routeToolCall(connections, fullName);
+            if (!route) {
+              toolResult = `Error: unknown tool '${fullName}'`;
               isError = true;
+            } else {
+              try {
+                const r = await route.conn.call(route.toolName, args, signal);
+                toolResult = r.content;
+                isError = r.isError;
+              } catch (err) {
+                toolResult = `Error: ${(err as Error).message}`;
+                isError = true;
+              }
             }
           }
         }
@@ -338,10 +526,12 @@ export async function createAgent(
           });
         }
       }
+      persistPending();
     }
 
     const stop = `[agent] task [${task.id}] reached max loop count (${maxLoops}), aborting`;
     messages.push({ role: 'assistant', content: stop });
+    persistPending();
     yield { type: 'text', content: stop };
     finalText = stop;
     return { text: finalText, hitMaxLoops: true };
@@ -448,6 +638,7 @@ export async function createAgent(
   function reset(): void {
     messages.length = 0;
     messages.push({ role: 'system', content: systemPrompt });
+    persistedCount = messages.length;
     stack.clear();
     taskArchive.clear();
   }
@@ -466,7 +657,7 @@ export async function createAgent(
     return stack.abortAll();
   }
 
-  return { chat, reset, getTaskStack, getArchive, abortAll };
+  return { chat, reset, getTaskStack, getArchive, abortAll, respondConfirm };
 }
 
 export const __internal__ = {
