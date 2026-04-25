@@ -102,25 +102,7 @@ async function main() {
   console.log(`${C.dim}  exec:    ${execMcp}${C.reset}`);
   console.log(`${C.dim}  fs:      ${fsMcp}${C.reset}`);
 
-  // check if rtk is installed
-  let hasRtk = false;
-  try { execSync('which rtk', { stdio: 'pipe' }); hasRtk = true; } catch { /* not found */ }
-  if (hasRtk) {
-    console.log(`${C.green}✓ rtk available (command output compression)${C.reset}`);
-  } else {
-    console.log(`${C.dim}Installing rtk (command output compression)...${C.reset}`);
-    try {
-      execSync('brew install rtk-ai/tap/rtk', { stdio: 'pipe' });
-      console.log(`${C.green}✓ rtk installed${C.reset}`);
-    } catch {
-      try {
-        execSync('curl -fsSL https://rtk.sh | bash', { stdio: 'pipe' });
-        console.log(`${C.green}✓ rtk installed${C.reset}`);
-      } catch {
-        console.log(`${C.yellow}⚠ rtk install failed (optional, commands will run without compression)${C.reset}`);
-      }
-    }
-  }
+  console.log(`${C.green}✓ built-in output compression${C.reset}`);
 
   // check if ma CLI is globally installed
   if (isMaInstalled()) {
