@@ -7,11 +7,14 @@ interface CustomTextInputProps {
   onSubmit?: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  history?: string[];
+  onHistoryUp?: () => void;
+  onHistoryDown?: () => void;
 }
 
 const PASTE_JUNK_RE = /\[200~|\[201~|\x1b\[200~|\x1b\[201~/g;
 
-export function CustomTextInput({ value, onChange, onSubmit, placeholder, disabled }: CustomTextInputProps) {
+export function CustomTextInput({ value, onChange, onSubmit, placeholder, disabled, onHistoryUp, onHistoryDown }: CustomTextInputProps) {
   const [cursorPos, setCursorPos] = useState(value.length);
 
   useEffect(() => {
@@ -67,8 +70,16 @@ export function CustomTextInput({ value, onChange, onSubmit, placeholder, disabl
       return;
     }
 
+    if (key.upArrow) {
+      onHistoryUp?.();
+      return;
+    }
+    if (key.downArrow) {
+      onHistoryDown?.();
+      return;
+    }
+
     if (key.escape || key.tab) return;
-    if (key.upArrow || key.downArrow) return;
     if (key.ctrl || key.meta) return;
 
     if (!input) return;

@@ -72,6 +72,7 @@ async function main() {
   const fsMcp = path.join(projectRoot, 'servers', 'fs-mcp.ts');
   const fsEditMcp = path.join(projectRoot, 'servers', 'fs-edit-mcp.ts');
   const grepMcp = path.join(projectRoot, 'servers', 'grep-mcp.ts');
+  const webMcp = path.join(projectRoot, 'servers', 'web-mcp.ts');
 
   const config: Record<string, any> = {
     model: { baseURL, model, apiKey },
@@ -80,6 +81,7 @@ async function main() {
       fs: { command: tsxBin, args: [fsMcp] },
       'fs-edit': { command: tsxBin, args: [fsEditMcp] },
       grep: { command: tsxBin, args: [grepMcp] },
+      web: { command: tsxBin, args: [webMcp] },
     },
   };
 

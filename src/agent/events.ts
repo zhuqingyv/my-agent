@@ -11,4 +11,6 @@ export type AgentEvent =
   | { type: 'thinking:end'; durationMs: number }
   | { type: 'tool:confirm'; requestId: string; cmd: string; reason: string }
   | { type: 'compact:done'; freed: number }
+  | { type: 'ask_user'; question: string }
+  | { type: 'plan'; content: string }
   | { type: 'aborted' };

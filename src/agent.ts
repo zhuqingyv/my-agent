@@ -28,6 +28,7 @@ import {
 import { loadAgentMd } from './agent/memdir.js';
 import { estimateTokens } from './agent/tokenCount.js';
 import { summarizeRange } from './agent/summarize.js';
+import { createTodoList } from './agent/todo.js';
 import type { SessionStore } from './session/store.js';
 
 export interface CreateAgentOptions {
@@ -124,6 +125,7 @@ const CREATE_TASK_TOOL: ChatCompletionTool = {
 interface BuiltinToolContext {
   stack: TaskStack;
   currentTask: Task;
+  todoList: ReturnType<typeof createTodoList>;
 }
 
 interface BuiltinTool {
@@ -167,6 +169,116 @@ builtinTools.set(CREATE_TASK_TOOL_NAME, {
     } catch (err) {
       return { content: `Error: ${(err as Error).message}`, isError: true };
     }
+  },
+});
+
+const ASK_USER_PREFIX = '[ask_user] ';
+const PLAN_OPEN = '[plan]\n';
+
+builtinTools.set('ask_user', {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'ask_user',
+      description:
+        '向用户提问以澄清需求。当任务描述不清楚、有多种理解方式、或需要用户确认时使用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: '要问用户的问题' },
+        },
+        required: ['question'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: (args) => {
+    const q = typeof args.question === 'string' ? args.question.trim() : '';
+    if (!q) return { content: 'Error: question is required', isError: true };
+    return { content: `${ASK_USER_PREFIX}${q}`, isError: false };
+  },
+});
+
+builtinTools.set('todo_write', {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'todo_write',
+      description: '管理待办列表。用于规划工作步骤、跟踪进度。',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['add', 'complete', 'remove', 'list'],
+            description: '操作类型',
+          },
+          text: { type: 'string', description: 'add 时的待办内容' },
+          id: { type: 'string', description: 'complete/remove 时的 ID' },
+        },
+        required: ['action'],
+      },
+    },
+  },
+  handler: (args, ctx) => {
+    const action = typeof args.action === 'string' ? args.action : '';
+    const todo = ctx.todoList;
+    if (action === 'add') {
+      const text = typeof args.text === 'string' ? args.text.trim() : '';
+      if (!text)
+        return { content: 'Error: text is required for add', isError: true };
+      const item = todo.add(text);
+      return {
+        content: `added ${item.id}\n\n${todo.format()}`,
+        isError: false,
+      };
+    }
+    if (action === 'complete') {
+      const id = typeof args.id === 'string' ? args.id : '';
+      if (!id)
+        return { content: 'Error: id is required for complete', isError: true };
+      const ok = todo.complete(id);
+      if (!ok) return { content: `Error: todo ${id} not found`, isError: true };
+      return { content: `completed ${id}\n\n${todo.format()}`, isError: false };
+    }
+    if (action === 'remove') {
+      const id = typeof args.id === 'string' ? args.id : '';
+      if (!id)
+        return { content: 'Error: id is required for remove', isError: true };
+      const ok = todo.remove(id);
+      if (!ok) return { content: `Error: todo ${id} not found`, isError: true };
+      return { content: `removed ${id}\n\n${todo.format()}`, isError: false };
+    }
+    if (action === 'list') {
+      return { content: todo.format(), isError: false };
+    }
+    return { content: `Error: unknown action '${action}'`, isError: true };
+  },
+});
+
+builtinTools.set('enter_plan_mode', {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'enter_plan_mode',
+      description:
+        '进入方案模式。复杂任务开始前调用，输出方案让用户确认后再执行。',
+      parameters: {
+        type: 'object',
+        properties: {
+          plan: { type: 'string', description: '方案内容（Markdown 格式）' },
+        },
+        required: ['plan'],
+      },
+    },
+  },
+  handler: (args) => {
+    const plan = typeof args.plan === 'string' ? args.plan.trim() : '';
+    if (!plan) return { content: 'Error: plan is required', isError: true };
+    return {
+      content: `${PLAN_OPEN}${plan}\n[/plan]\n\n等待用户确认...`,
+      isError: false,
+    };
   },
 });
 
@@ -295,6 +407,7 @@ export async function createAgent(
   }
 
   const stack = createTaskStack();
+  const todoList = createTodoList();
   const taskArchive = new Map<string, ChatCompletionMessageParam[]>();
   const pendingConfirms = new Map<string, (approved: boolean) => void>();
   let confirmCounter = 0;
@@ -578,9 +691,23 @@ export async function createAgent(
         if (!skipExecute) {
           const builtin = builtinTools.get(fullName);
           if (builtin) {
-            const r = builtin.handler(args, { stack, currentTask: task });
+            const r = builtin.handler(args, {
+              stack,
+              currentTask: task,
+              todoList,
+            });
             toolResult = r.content;
             isError = r.isError;
+            if (!isError && fullName === 'ask_user') {
+              yield {
+                type: 'ask_user',
+                question: toolResult.slice(ASK_USER_PREFIX.length),
+              };
+            } else if (!isError && fullName === 'enter_plan_mode') {
+              const planArg =
+                typeof args.plan === 'string' ? args.plan.trim() : '';
+              yield { type: 'plan', content: planArg };
+            }
           } else {
             const route = routeToolCall(connections, fullName);
             if (!route) {

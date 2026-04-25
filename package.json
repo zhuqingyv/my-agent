@@ -1,6 +1,6 @@
 {
   "name": "my-agent",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "CLI agent tool with local model support and dynamic MCP injection",
   "type": "module",
   "bin": {
