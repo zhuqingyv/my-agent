@@ -532,6 +532,13 @@ export async function createAgent(
         request.tool_choice = 'auto';
       }
 
+      // Debug: dump messages before API call
+      if (process.env.MA_DEBUG) {
+        const fs = await import('node:fs');
+        const dbg = requestMessages.map((m: any) => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 100) : m.content, tool_calls: m.tool_calls?.length, tool_call_id: m.tool_call_id }));
+        fs.appendFileSync(process.env.MA_DEBUG, `[${new Date().toISOString()}] API REQUEST messages (${requestMessages.length}):\n${JSON.stringify(dbg, null, 2)}\n\n`);
+      }
+
       let stream;
       try {
         stream = await withRetry(() =>
