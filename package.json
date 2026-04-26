@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "tsx src/cli/index.tsx",
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/src/cli/index.js",
     "dev": "tsx watch src/cli/index.tsx",
     "test": "tsx --test test/*.test.ts",
     "e2e": "bash test/e2e.sh",
