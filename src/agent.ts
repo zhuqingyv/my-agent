@@ -590,21 +590,13 @@ export async function createAgent(
 
       let isThinking = false;
       let thinkingStartTime = 0;
-      let pendingBuf = '';
-
-      const OPEN_MARKERS = ['<|channel>thought', '<think>'];
-      const CLOSE_MARKERS = ['<channel|>', '</think>'];
-      const maxMarkerLen = Math.max(
-        ...OPEN_MARKERS.map((s) => s.length),
-        ...CLOSE_MARKERS.map((s) => s.length)
-      );
 
       for await (const chunk of stream as any) {
         const delta = chunk?.choices?.[0]?.delta;
         if (!delta) continue;
 
-        // Handle reasoning_content (Qwen thinking mode)
-        if (typeof (delta as any).reasoning_content === 'string') {
+        // Handle reasoning_content field (Qwen/Gemma thinking mode)
+        if (typeof (delta as any).reasoning_content === 'string' && (delta as any).reasoning_content.length > 0) {
           if (!isThinking) {
             isThinking = true;
             thinkingStartTime = Date.now();
@@ -614,72 +606,32 @@ export async function createAgent(
         }
 
         if (typeof delta.content === 'string' && delta.content.length > 0) {
-          pendingBuf += delta.content;
+          let text = delta.content;
 
-          // Process buffer, handling markers that may span chunks
-          while (pendingBuf.length > 0) {
-            if (isThinking) {
-              // Look for close marker
-              let closeIdx = -1;
-              let closeLen = 0;
-              for (const m of CLOSE_MARKERS) {
-                const i = pendingBuf.indexOf(m);
-                if (i >= 0 && (closeIdx < 0 || i < closeIdx)) {
-                  closeIdx = i;
-                  closeLen = m.length;
-                }
-              }
-              if (closeIdx >= 0) {
-                // Discard content up to and including close marker
-                pendingBuf = pendingBuf.slice(closeIdx + closeLen);
-                isThinking = false;
-                yield {
-                  type: 'thinking:end',
-                  durationMs: Date.now() - thinkingStartTime,
-                };
-              } else {
-                // No close marker yet; keep partial tail for next chunk
-                const keep = Math.min(pendingBuf.length, maxMarkerLen - 1);
-                pendingBuf = pendingBuf.slice(pendingBuf.length - keep);
-                break;
-              }
-            } else {
-              // Look for open marker
-              let openIdx = -1;
-              let openLen = 0;
-              for (const m of OPEN_MARKERS) {
-                const i = pendingBuf.indexOf(m);
-                if (i >= 0 && (openIdx < 0 || i < openIdx)) {
-                  openIdx = i;
-                  openLen = m.length;
-                }
-              }
-              if (openIdx >= 0) {
-                // Emit everything before the marker
-                const before = pendingBuf.slice(0, openIdx);
-                if (before.length > 0) {
-                  contentBuf += before;
-                  yield { type: 'token', text: before };
-                }
-                pendingBuf = pendingBuf.slice(openIdx + openLen);
-                isThinking = true;
-                thinkingStartTime = Date.now();
-                yield { type: 'thinking:start' };
-              } else {
-                // No open marker; emit safe prefix, keep partial tail
-                const safeLen = Math.max(
-                  0,
-                  pendingBuf.length - (maxMarkerLen - 1)
-                );
-                if (safeLen > 0) {
-                  const emit = pendingBuf.slice(0, safeLen);
-                  contentBuf += emit;
-                  yield { type: 'token', text: emit };
-                  pendingBuf = pendingBuf.slice(safeLen);
-                }
-                break;
-              }
+          // Simple thinking token filter (strip inline markers)
+          if (text.includes('<|channel>thought') || text.includes('<think>')) {
+            if (!isThinking) {
+              isThinking = true;
+              thinkingStartTime = Date.now();
+              yield { type: 'thinking:start' };
             }
+            text = text.replace(/<\|channel>thought/g, '').replace(/<think>/g, '');
+          }
+          if (text.includes('<channel|>') || text.includes('</think>')) {
+            text = text.replace(/<channel\|>/g, '').replace(/<\/think>/g, '');
+            if (isThinking) {
+              isThinking = false;
+              yield { type: 'thinking:end', durationMs: Date.now() - thinkingStartTime };
+            }
+          }
+
+          // If currently thinking, skip content
+          if (isThinking) continue;
+
+          // Emit non-empty content
+          if (text.length > 0) {
+            contentBuf += text;
+            yield { type: 'token', text };
           }
         }
 
@@ -698,17 +650,10 @@ export async function createAgent(
         }
       }
 
-      // Flush any remaining pendingBuf after stream ends
-      if (!isThinking && pendingBuf.length > 0) {
-        contentBuf += pendingBuf;
-        yield { type: 'token', text: pendingBuf };
-      }
+      // Close unclosed thinking state
       if (isThinking) {
         isThinking = false;
-        yield {
-          type: 'thinking:end',
-          durationMs: Date.now() - thinkingStartTime,
-        };
+        yield { type: 'thinking:end', durationMs: Date.now() - thinkingStartTime };
       }
 
       const assembled = [...toolAcc.entries()]
