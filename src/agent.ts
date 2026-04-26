@@ -526,7 +526,7 @@ export async function createAgent(
         messages: requestMessages,
         temperature: config.model.temperature ?? 0.6,
         frequency_penalty: config.model.frequencyPenalty ?? 1.1,
-        max_tokens: config.model.maxTokens ?? 4096,
+        ...(config.model.maxTokens ? { max_tokens: config.model.maxTokens } : {}),
       };
       if (tools.length > 0) {
         request.tools = tools;
@@ -597,6 +597,7 @@ export async function createAgent(
       >();
 
       let isThinking = false;
+      let thinkingViaReasoning = false;
       let thinkingStartTime = 0;
 
       for await (const chunk of stream as any) {
@@ -607,6 +608,7 @@ export async function createAgent(
         if (typeof (delta as any).reasoning_content === 'string' && (delta as any).reasoning_content.length > 0) {
           if (!isThinking) {
             isThinking = true;
+            thinkingViaReasoning = true;
             thinkingStartTime = Date.now();
             yield { type: 'thinking:start' };
           }
@@ -614,9 +616,16 @@ export async function createAgent(
         }
 
         if (typeof delta.content === 'string' && delta.content.length > 0) {
+          // If thinking was started via reasoning_content, content appearing means thinking ended
+          if (isThinking && thinkingViaReasoning) {
+            isThinking = false;
+            thinkingViaReasoning = false;
+            yield { type: 'thinking:end', durationMs: Date.now() - thinkingStartTime };
+          }
+
           let text = delta.content;
 
-          // Simple thinking token filter (strip inline markers)
+          // Simple thinking token filter (strip inline markers for Gemma)
           if (text.includes('<|channel>thought') || text.includes('<think>')) {
             if (!isThinking) {
               isThinking = true;
