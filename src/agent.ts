@@ -511,21 +511,19 @@ export async function createAgent(
     let finalText = '';
 
     for (let loop = 0; loop < maxLoops; loop++) {
-      removeLastStackStateMessage(messages);
-
       const compactResult = await maybeCompact(signal);
       if (compactResult.compacted) {
         yield { type: 'compact:done', freed: compactResult.freed };
       }
 
       const stateStr = renderStackState(stack);
-      if (stateStr) {
-        messages.push({ role: 'system', content: stateStr });
-      }
+      const requestMessages = stateStr
+        ? [...messages, { role: 'system' as const, content: stateStr }]
+        : messages;
 
       const request: Parameters<typeof client.chat.completions.create>[0] = {
         model: config.model.model,
-        messages,
+        messages: requestMessages,
         temperature: config.model.temperature ?? 0.6,
         frequency_penalty: config.model.frequencyPenalty ?? 1.1,
       };
@@ -545,14 +543,36 @@ export async function createAgent(
       } catch (retryErr) {
         const status = (retryErr as any)?.status;
         if (status === 500 && messages.length > 4) {
-          // 500 after retries — try truncating messages and retry once more
+          // 500 after retries — truncate preserving system(0) + first user + last N
           const keep = Math.max(4, Math.floor(messages.length / 2));
-          const removed = messages.splice(1, messages.length - keep);
-          messages.splice(1, 0, {
-            role: 'system' as const,
-            content: `[context truncated: ${removed.length} messages removed due to server error]`,
-          });
-          request.messages = messages;
+          const firstUserIdx = messages.findIndex(
+            (m, i) => i > 0 && m.role === 'user'
+          );
+          const tailStart = Math.max(
+            firstUserIdx > 0 ? firstUserIdx + 1 : 1,
+            messages.length - keep
+          );
+          const originalLen = messages.length;
+          const newMessages: ChatCompletionMessageParam[] = [messages[0]];
+          if (firstUserIdx > 1) {
+            newMessages.push({
+              role: 'system',
+              content: '[context truncated due to server error]',
+            });
+          }
+          if (firstUserIdx > 0) {
+            newMessages.push(messages[firstUserIdx]);
+          }
+          for (let i = tailStart; i < originalLen; i++) {
+            newMessages.push(messages[i]);
+          }
+          messages.length = 0;
+          messages.push(...newMessages);
+
+          const stateStr2 = renderStackState(stack);
+          request.messages = stateStr2
+            ? [...messages, { role: 'system' as const, content: stateStr2 }]
+            : messages;
           stream = await client.chat.completions.create(
             { ...request, stream: true },
             { signal }
@@ -570,7 +590,14 @@ export async function createAgent(
 
       let isThinking = false;
       let thinkingStartTime = 0;
-      let thinkingBuf = '';
+      let pendingBuf = '';
+
+      const OPEN_MARKERS = ['<|channel>thought', '<think>'];
+      const CLOSE_MARKERS = ['<channel|>', '</think>'];
+      const maxMarkerLen = Math.max(
+        ...OPEN_MARKERS.map((s) => s.length),
+        ...CLOSE_MARKERS.map((s) => s.length)
+      );
 
       for await (const chunk of stream as any) {
         const delta = chunk?.choices?.[0]?.delta;
@@ -587,48 +614,72 @@ export async function createAgent(
         }
 
         if (typeof delta.content === 'string' && delta.content.length > 0) {
-          // Detect thinking tokens (Gemma: <|channel>thought / <channel|>)
-          const cleaned = delta.content
-            .replace(/<\|channel>thought/g, '')
-            .replace(/<channel\|>/g, '')
-            .replace(/<\|channel>/g, '')
-            .replace(/<think>/g, '')
-            .replace(/<\/think>/g, '');
+          pendingBuf += delta.content;
 
-          // Check if we're entering/exiting thinking
-          if (delta.content.includes('<|channel>thought') || delta.content.includes('<think>')) {
-            if (!isThinking) {
-              isThinking = true;
-              thinkingStartTime = Date.now();
-              yield { type: 'thinking:start' };
-            }
-            thinkingBuf += cleaned;
-            continue;
-          }
-
-          if (delta.content.includes('<channel|>') || delta.content.includes('</think>')) {
+          // Process buffer, handling markers that may span chunks
+          while (pendingBuf.length > 0) {
             if (isThinking) {
-              isThinking = false;
-              yield { type: 'thinking:end', durationMs: Date.now() - thinkingStartTime };
+              // Look for close marker
+              let closeIdx = -1;
+              let closeLen = 0;
+              for (const m of CLOSE_MARKERS) {
+                const i = pendingBuf.indexOf(m);
+                if (i >= 0 && (closeIdx < 0 || i < closeIdx)) {
+                  closeIdx = i;
+                  closeLen = m.length;
+                }
+              }
+              if (closeIdx >= 0) {
+                // Discard content up to and including close marker
+                pendingBuf = pendingBuf.slice(closeIdx + closeLen);
+                isThinking = false;
+                yield {
+                  type: 'thinking:end',
+                  durationMs: Date.now() - thinkingStartTime,
+                };
+              } else {
+                // No close marker yet; keep partial tail for next chunk
+                const keep = Math.min(pendingBuf.length, maxMarkerLen - 1);
+                pendingBuf = pendingBuf.slice(pendingBuf.length - keep);
+                break;
+              }
+            } else {
+              // Look for open marker
+              let openIdx = -1;
+              let openLen = 0;
+              for (const m of OPEN_MARKERS) {
+                const i = pendingBuf.indexOf(m);
+                if (i >= 0 && (openIdx < 0 || i < openIdx)) {
+                  openIdx = i;
+                  openLen = m.length;
+                }
+              }
+              if (openIdx >= 0) {
+                // Emit everything before the marker
+                const before = pendingBuf.slice(0, openIdx);
+                if (before.length > 0) {
+                  contentBuf += before;
+                  yield { type: 'token', text: before };
+                }
+                pendingBuf = pendingBuf.slice(openIdx + openLen);
+                isThinking = true;
+                thinkingStartTime = Date.now();
+                yield { type: 'thinking:start' };
+              } else {
+                // No open marker; emit safe prefix, keep partial tail
+                const safeLen = Math.max(
+                  0,
+                  pendingBuf.length - (maxMarkerLen - 1)
+                );
+                if (safeLen > 0) {
+                  const emit = pendingBuf.slice(0, safeLen);
+                  contentBuf += emit;
+                  yield { type: 'token', text: emit };
+                  pendingBuf = pendingBuf.slice(safeLen);
+                }
+                break;
+              }
             }
-            // Output any remaining cleaned content
-            if (cleaned.trim()) {
-              contentBuf += cleaned;
-              yield { type: 'token', text: cleaned };
-            }
-            continue;
-          }
-
-          // If currently thinking, don't output to user
-          if (isThinking) {
-            thinkingBuf += cleaned;
-            continue;
-          }
-
-          // Normal content
-          if (cleaned.length > 0) {
-            contentBuf += cleaned;
-            yield { type: 'token', text: cleaned };
           }
         }
 
@@ -645,6 +696,19 @@ export async function createAgent(
             if (tc.function?.arguments) cur.argsBuf += tc.function.arguments;
           }
         }
+      }
+
+      // Flush any remaining pendingBuf after stream ends
+      if (!isThinking && pendingBuf.length > 0) {
+        contentBuf += pendingBuf;
+        yield { type: 'token', text: pendingBuf };
+      }
+      if (isThinking) {
+        isThinking = false;
+        yield {
+          type: 'thinking:end',
+          durationMs: Date.now() - thinkingStartTime,
+        };
       }
 
       const assembled = [...toolAcc.entries()]
