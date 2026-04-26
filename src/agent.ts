@@ -518,8 +518,8 @@ export async function createAgent(
 
       const stateStr = renderStackState(stack);
       const requestMessages = stateStr
-        ? [...messages, { role: 'system' as const, content: stateStr }]
-        : messages;
+        ? [{ ...messages[0], content: (messages[0] as any).content + '\n' + stateStr }, ...messages.slice(1)]
+        : [...messages];
 
       const request: Parameters<typeof client.chat.completions.create>[0] = {
         model: config.model.model,
@@ -578,7 +578,7 @@ export async function createAgent(
 
           const stateStr2 = renderStackState(stack);
           request.messages = stateStr2
-            ? [...messages, { role: 'system' as const, content: stateStr2 }]
+            ? [{ ...messages[0], content: (messages[0] as any).content + '\n' + stateStr2 }, ...messages.slice(1)]
             : messages;
           stream = await client.chat.completions.create(
             { ...request, stream: true },
