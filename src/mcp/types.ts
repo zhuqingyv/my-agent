@@ -41,6 +41,7 @@ export interface ModelConfig {
   temperature?: number;
   frequencyPenalty?: number;
   contextWindow?: number;
+  maxTokens?: number;
 }
 
 export interface DangerConfig {

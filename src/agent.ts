@@ -526,6 +526,7 @@ export async function createAgent(
         messages: requestMessages,
         temperature: config.model.temperature ?? 0.6,
         frequency_penalty: config.model.frequencyPenalty ?? 1.1,
+        max_tokens: config.model.maxTokens ?? 4096,
       };
       if (tools.length > 0) {
         request.tools = tools;
