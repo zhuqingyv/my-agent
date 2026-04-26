@@ -534,12 +534,33 @@ export async function createAgent(
         request.tool_choice = 'auto';
       }
 
-      const stream = await withRetry(() =>
-        client.chat.completions.create(
-          { ...request, stream: true },
-          { signal }
-        )
-      );
+      let stream;
+      try {
+        stream = await withRetry(() =>
+          client.chat.completions.create(
+            { ...request, stream: true },
+            { signal }
+          )
+        );
+      } catch (retryErr) {
+        const status = (retryErr as any)?.status;
+        if (status === 500 && messages.length > 4) {
+          // 500 after retries — try truncating messages and retry once more
+          const keep = Math.max(4, Math.floor(messages.length / 2));
+          const removed = messages.splice(1, messages.length - keep);
+          messages.splice(1, 0, {
+            role: 'system' as const,
+            content: `[context truncated: ${removed.length} messages removed due to server error]`,
+          });
+          request.messages = messages;
+          stream = await client.chat.completions.create(
+            { ...request, stream: true },
+            { signal }
+          );
+        } else {
+          throw retryErr;
+        }
+      }
 
       let contentBuf = '';
       const toolAcc = new Map<

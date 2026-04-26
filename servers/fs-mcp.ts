@@ -67,8 +67,7 @@ function fsErr(op: string, path: string, e: unknown) {
 }
 
 function handleReadFile(args: Record<string, unknown>) {
-  const path = args.path;
-  if (typeof path !== 'string' || !path) return ok('请提供文件路径，例如: read_file(path: "./package.json")', true);
+  const path = (typeof args.path === 'string' && args.path.trim()) ? args.path.trim() : './package.json';
   if (DEVICES.has(path)) return ok(`拒绝读取设备文件: ${path}`, true);
   const offset = typeof args.offset === 'number' && args.offset > 0 ? Math.floor(args.offset) : 1;
   const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : null;
