@@ -542,11 +542,15 @@ export async function createAgent(
       }
 
       // Debug: dump messages before API call
-      if (process.env.MA_DEBUG) {
+      // Always log API requests for debugging
+      try {
         const fs = await import('node:fs');
-        const dbg = requestMessages.map((m: any) => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 100) : m.content, tool_calls: m.tool_calls?.length, tool_call_id: m.tool_call_id }));
-        fs.appendFileSync(process.env.MA_DEBUG, `[${new Date().toISOString()}] API REQUEST messages (${requestMessages.length}):\n${JSON.stringify(dbg, null, 2)}\n\n`);
-      }
+        const os = await import('node:os');
+        const path = await import('node:path');
+        const logFile = process.env.MA_DEBUG || path.join(os.homedir(), '.my-agent', 'api-debug.log');
+        const dbg = requestMessages.map((m: any) => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 200) : m.content, tool_calls: m.tool_calls?.length, tool_call_id: m.tool_call_id }));
+        fs.appendFileSync(logFile, `[${new Date().toISOString()}] API REQUEST messages (${requestMessages.length}):\n${JSON.stringify(dbg, null, 2)}\n\n`);
+      } catch { /* ignore */ }
 
       let stream;
       try {
