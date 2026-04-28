@@ -505,6 +505,9 @@ export async function createAgent(
     rootUserMessage: ChatContent,
     signal?: AbortSignal
   ): AsyncGenerator<AgentEvent, { text: string; hitMaxLoops: boolean }, unknown> {
+    const errorHistory = new Map<string, number>();
+    const MAX_SAME_ERROR = 2;
+
     let openingContent: ChatCompletionUserMessageParam['content'];
     if (task.parentId) {
       openingContent = `（子任务）${task.prompt}`;
@@ -710,6 +713,21 @@ export async function createAgent(
       for (const tc of toolCalls) {
         const fullName = tc.function.name;
         const args = normalizeArguments(tc.function.arguments);
+
+        const callKey = `${fullName}:${JSON.stringify(args)}`;
+        const prevErrors = errorHistory.get(callKey) || 0;
+        if (prevErrors >= MAX_SAME_ERROR) {
+          const blockedResult = `已尝试 ${prevErrors} 次均失败，请换个路径或方式。`;
+          yield { type: 'tool:call', name: fullName, args };
+          yield { type: 'tool:result', ok: false, content: blockedResult };
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: blockedResult,
+          });
+          continue;
+        }
+
         yield { type: 'tool:call', name: fullName, args };
 
         let toolResult = '';
@@ -801,6 +819,12 @@ export async function createAgent(
             tool_call_id: tc.id,
             content: compacted,
           });
+        }
+
+        if (isError) {
+          errorHistory.set(callKey, prevErrors + 1);
+        } else {
+          errorHistory.delete(callKey);
         }
       }
       persistPending();
