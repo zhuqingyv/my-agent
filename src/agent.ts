@@ -706,7 +706,7 @@ export async function createAgent(
 
       messages.push({
         role: 'assistant',
-        content: contentBuf,
+        content: contentBuf.trim() || '',
         tool_calls: toolCalls,
       });
 
