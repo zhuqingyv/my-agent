@@ -459,7 +459,7 @@ test('messages: foldMessages after task completion leaves no orphan tool results
       (m: any) =>
         m.role === 'system' &&
         typeof m.content === 'string' &&
-        m.content.includes('[stack:completed')
+        (m.content.includes('[stack:completed') || m.content.includes('[conversation]'))
     );
     assert.ok(hasStackSummary, 'fold summary system message must be present');
 

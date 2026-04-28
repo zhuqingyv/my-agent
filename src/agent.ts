@@ -493,10 +493,13 @@ export async function createAgent(
     if (anchor < 0 || anchor > messages.length) return;
     const folded = messages.splice(anchor);
     taskArchive.set(taskId, folded);
-    messages.push({
-      role: 'system',
-      content: `[stack:completed ${taskId}] Summary: ${summary}`,
-    });
+    // Preserve user question in summary for context continuity
+    const userMsg = folded.find(m => m.role === 'user');
+    const userQ = userMsg && typeof userMsg.content === 'string' ? userMsg.content : '';
+    const foldSummary = userQ
+      ? `[conversation] User asked: "${userQ.slice(0, 100)}" → ${summary || '(no answer)'}`
+      : `[stack:completed ${taskId}] Summary: ${summary}`;
+    messages.push({ role: 'system', content: foldSummary });
     persistedCount = messages.length;
   }
 
@@ -698,6 +701,13 @@ export async function createAgent(
       const toolCalls = normalizeToolCalls(assembled);
 
       if (!toolCalls) {
+        // If content is empty/whitespace after tool use, nudge model to answer
+        if (contentBuf.trim().length === 0 && loop > 0) {
+          messages.push({ role: 'assistant', content: contentBuf });
+          messages.push({ role: 'user', content: 'Please provide your answer based on the tool results above.' });
+          persistPending();
+          continue; // one more loop to get actual answer
+        }
         messages.push({ role: 'assistant', content: contentBuf });
         persistPending();
         finalText = contentBuf;
