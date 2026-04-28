@@ -222,6 +222,8 @@ export function App({ config, connections, agent, debug }: AppProps) {
         model={config.model.model}
         taskCount={taskCount}
         debug={debug}
+        contextUsed={agent.getContextUsage().used}
+        contextTotal={agent.getContextUsage().total}
       />
     </Box>
   );

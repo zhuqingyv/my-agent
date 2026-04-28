@@ -958,7 +958,14 @@ export async function createAgent(
     return stack.abortAll();
   }
 
-  return { chat, reset, getTaskStack, getArchive, abortAll, respondConfirm };
+  function getContextUsage(): { used: number; total: number } {
+    return {
+      used: estimateTokens(messages),
+      total: config.model.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+    };
+  }
+
+  return { chat, reset, getTaskStack, getArchive, abortAll, respondConfirm, getContextUsage };
 }
 
 export const __internal__ = {

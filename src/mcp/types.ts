@@ -80,4 +80,5 @@ export interface Agent {
   getArchive(taskId: string): ArchivedMessage[] | null;
   abortAll(): number;
   respondConfirm(requestId: string, approved: boolean): void;
+  getContextUsage(): { used: number; total: number };
 }
