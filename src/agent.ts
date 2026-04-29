@@ -769,23 +769,6 @@ export async function createAgent(
         const fullName = tc.function.name;
         const args = normalizeArguments(tc.function.arguments);
 
-        // Intercept empty args when tool schema has required fields
-        if (Object.keys(args).length === 0) {
-          const schema = findToolSchema(connections, fullName);
-          const required = schema?.required;
-          if (Array.isArray(required) && required.length > 0) {
-            const emptyResult = `Error: tool "${fullName}" requires [${required.join(', ')}] but received empty arguments. Please provide the required parameters.`;
-            yield { type: 'tool:call', name: fullName, args };
-            yield { type: 'tool:result', ok: false, content: emptyResult };
-            messages.push({
-              role: 'tool',
-              tool_call_id: tc.id,
-              content: emptyResult,
-            });
-            continue;
-          }
-        }
-
         const callKey = `${fullName}:${JSON.stringify(args)}`;
         const prevErrors = errorHistory.get(callKey) || 0;
         if (prevErrors >= MAX_SAME_ERROR) {
