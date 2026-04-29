@@ -1,6 +1,58 @@
 # Benchmark Run Log
 
-## Run 1 — 2026-04-29
+## Run 2 — 2026-04-29（修复后）
+
+修复内容：grep-mcp 默认递归 + fs-mcp path 空报错 + 断言路径 endsWith 匹配
+
+### 结果总览
+
+```
+MA Agent @ Qwen3-30B → Level 1.97 / 5.0
+
+L0 Connectivity   ██████████ 100%  ✓  (10/10)
+L1 Stable Tools   ██████████  98%  ✓  (29/30, was 28/30)
+L2 Multi-turn     ████████░░  77%  ✗  (23/30, was 23/30, gate 需80%)
+```
+
+### L0: 10/10, score=1.000, gate=✓
+无变化。
+
+### L1: 29/30, score=0.971, gate=✓ (+1 题)
+- **L1-021 搜索 useState**：0→5/5 ✓（grep 递归修复生效）
+- L1-024 搜索 helper：仍通过（之前就断续通过，现在稳定）
+- 1 题偶发 fail（L1-010/012/024 各有 1/5 次 soft 低，不影响 gate）
+
+### L2: 23/30, score=0.762, passRate=0.767, gate=✗（需≥80%，差 1 道题）
+
+#### 仍然失败的 7 道
+
+| 题目 | passRate | 根因 | 类型 |
+|------|----------|------|------|
+| L2-001 改 README 版本 | 1/5 | fs-edit old_string/new_string 参数不稳定 | 模型能力 |
+| L2-003 修改 config 端口 | 0/5 | 同上 | 模型能力 |
+| L2-004 升 package 版本 | 0/5 | 同上 | 模型能力 |
+| L2-005 重命名变量 | 0/5 | 同上 | 模型能力 |
+| L2-006 JSON 加字段 | 1/5 | 同上 | 模型能力 |
+| L2-007 项目概览多轮 | 2/5 | 多轮追问时回答不稳定 | 模型能力 |
+| L2-020 读 package 再跑 node | 2/5 | finalText 偶尔漏关键信息 | 模型能力 |
+
+**结论**：7 道失败全是 Qwen3-30B 模型的 tool calling 稳定性问题（特别是 fs-edit 参数），不是工程 bug。工程层面能修的已经修完了。
+
+#### 模型能力问题详解
+
+**fs-edit 是核心瓶颈**：5/7 道失败都是"读-改-写"类，模型对 `old_string`/`new_string` 精确匹配参数掌握不好：
+- 偶发空 args `{}`
+- old_string 不精确（多了/少了空格/换行）
+- 没读文件就猜 old_string
+
+**可能的 agent 层补短板方向**（不改断言，改 agent 工程）：
+- agent 检测到空 args 时拦截，不发 MCP，提示模型重传
+- fs-edit 失败后自动提示模型用 fs__write_file 全量覆盖作为 fallback
+- 在 system prompt 里加 fs-edit 的用法示例
+
+---
+
+## Run 1 — 2026-04-29（修复前）
 
 ### L0 (10 tasks, runs=1)
 
