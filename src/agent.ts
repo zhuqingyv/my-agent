@@ -869,7 +869,14 @@ export async function createAgent(
         }
 
         if (isError) {
-          errorHistory.set(callKey, prevErrors + 1);
+          const newCount = prevErrors + 1;
+          errorHistory.set(callKey, newCount);
+          if (newCount === 1) {
+            const schema = findToolSchema(connections, fullName);
+            const requiredHint = Array.isArray(schema?.required) ? ` Required parameters: [${schema.required.join(', ')}].` : '';
+            const hint = `The tool call to "${fullName}" failed. Please check your parameters and try again.${requiredHint}`;
+            messages.push({ role: 'user', content: hint });
+          }
         } else {
           errorHistory.delete(callKey);
         }
