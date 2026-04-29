@@ -82,6 +82,12 @@ async function main() {
     byLevel.set(t.level, arr);
   }
 
+  // L0 必须存在题目；否则整次 run 无基线，不能判定通过。
+  if (!byLevel.has('L0')) {
+    console.error('\n❌ No L0 tasks found — L0 gate cannot be evaluated.');
+    process.exit(EXIT_L0_INVALID);
+  }
+
   // 3. Run tasks serially, level by level
   const allResults: TaskResult[] = [];
   const levelScores: LevelScore[] = [];

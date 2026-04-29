@@ -15,7 +15,7 @@ hard_assertions:
     args_contains:
       command: "pwd"
   - type: final_text_contains
-    contains: "/"
+    regex: "/(?:var|tmp|Users|private|home)\\b"
   - type: no_error_5xx
 
 soft_assertions:

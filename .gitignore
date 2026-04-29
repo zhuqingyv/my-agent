@@ -5,3 +5,4 @@ dist/
 test/visual/screenshots/
 playwright-report/
 test-results/
+test/benchmark/reports/

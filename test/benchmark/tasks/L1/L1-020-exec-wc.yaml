@@ -14,6 +14,8 @@ hard_assertions:
     tool: "exec__execute_command"
     args_contains:
       command: "wc"
+  - type: final_text_min_chars
+    chars: 5
   - type: no_error_5xx
 
 soft_assertions:

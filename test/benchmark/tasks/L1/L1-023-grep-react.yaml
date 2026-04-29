@@ -14,6 +14,8 @@ hard_assertions:
     tool: "grep__grep"
     args_contains:
       pattern: "react"
+  - type: final_text_contains
+    regex: "(?:react|index\\.js|useState)"
   - type: no_error_5xx
 
 soft_assertions:

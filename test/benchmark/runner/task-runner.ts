@@ -19,6 +19,7 @@ import { prepareFixture } from './fixture-manager.js';
 import { collectEvents, mergeTraces } from './event-collector.js';
 import { evaluateHard } from './assertions/hard.js';
 import { evaluateSoft } from './assertions/soft.js';
+import { scoreTask, computeMedian } from './scorer.js';
 import type {
   TaskDef,
   TaskResult,
@@ -51,11 +52,7 @@ export async function runTask(
     runs.push(score);
   }
 
-  const rawScores = runs.map((r) => r.rawScore);
-  const median = computeMedian(rawScores);
-  const stability = computeStability(rawScores);
-  const passCount = runs.filter((r) => r.hardPass).length;
-  const passRate = runs.length > 0 ? passCount / runs.length : 0;
+  const { median, stability, passRate } = computeMedian(runs);
 
   return {
     taskId: task.id,
@@ -170,79 +167,14 @@ async function runSingle(
     }
   }
 
-  return buildTaskScore(task.id, trace, hardResults, softResults);
-}
-
-/**
- * 组合 hard/soft 结果得到单次 run 的 TaskScore。
- * 公式（scorer 合入前内联）：hardPass ? 0.6 + 0.4*softScore : 0
- * crashed 视为 hardPass=false，rawScore 必 0。
- */
-function buildTaskScore(
-  taskId: string,
-  trace: RunTrace,
-  hardResults: HardAssertionResult[],
-  softResults: SoftResult[]
-): TaskScore {
-  const crashedOrAborted = trace.crashed || trace.aborted;
-  // 空 hardAssertions 时视为 pass；一旦任何 assertion 失败即整体 fail
-  const hardPass =
-    !crashedOrAborted && hardResults.every((r) => r.passed);
-
-  const softScore = weightedSoftScore(softResults);
-  const rawScore = hardPass ? 0.6 + 0.4 * softScore : 0;
-
-  return {
-    taskId,
-    hardPass,
-    softScore,
-    rawScore,
-    hardResults,
-    softResults,
-    trace,
-  };
-}
-
-/**
- * 软断言加权平均；score=null 的（M1 未实现类型）从分母剔除，避免中性分污染。
- * 全为 null 或没有软断言时返回 1（当 hardPass 时给满的 soft 基线）。
- */
-function weightedSoftScore(softResults: SoftResult[]): number {
-  let num = 0;
-  let den = 0;
-  for (const r of softResults) {
-    if (r.score === null) continue;
-    const w = r.weight > 0 ? r.weight : 0;
-    num += r.score * w;
-    den += w;
+  // scorer.scoreTask 只看 hardResults.every(passed)；
+  // crashed/aborted/hitMaxLoops 必须在这里强制 fail 整次 run（rawScore=0）。
+  const failed = trace.crashed || trace.aborted || trace.hitMaxLoops;
+  const score = scoreTask(hardResults, softResults, { taskId: task.id, trace });
+  if (failed) {
+    return { ...score, hardPass: false, rawScore: 0 };
   }
-  if (den === 0) return 1;
-  return num / den;
-}
-
-/**
- * 5 个 run 的 rawScore 取中位数。偶数个取中间两个平均。
- */
-function computeMedian(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 1) return sorted[mid];
-  return (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-/**
- * 稳定性 = 1 - 样本标准差（clamp 到 [0,1]）。
- * 单 run 时稳定性不可测，返回 1。
- */
-function computeStability(values: number[]): number {
-  if (values.length <= 1) return 1;
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const variance =
-    values.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) /
-    values.length;
-  const stdev = Math.sqrt(variance);
-  return Math.max(0, Math.min(1, 1 - stdev));
+  return score;
 }
 
 /**
