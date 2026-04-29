@@ -543,6 +543,8 @@ export async function createAgent(
     persistPending();
 
     let finalText = '';
+    let emptyArgsRetries = 0;
+    let tempOverride: number | undefined;
 
     for (let loop = 0; loop < maxLoops; loop++) {
       const compactResult = await maybeCompact(signal);
@@ -558,8 +560,8 @@ export async function createAgent(
       const request: Parameters<typeof client.chat.completions.create>[0] = {
         model: config.model.model,
         messages: requestMessages,
-        temperature: config.model.temperature ?? 0.6,
-        frequency_penalty: config.model.frequencyPenalty ?? 1.1,
+        temperature: tempOverride ?? config.model.temperature ?? 0.6,
+        frequency_penalty: tempOverride !== undefined ? 0 : (config.model.frequencyPenalty ?? 1.1),
         ...(config.model.maxTokens ? { max_tokens: config.model.maxTokens } : {}),
       };
       if (tools.length > 0) {
@@ -739,6 +741,21 @@ export async function createAgent(
         content: contentBuf.trim() || '',
         tool_calls: toolCalls,
       });
+
+      // P0-b: If ALL tool_calls have empty args, pop the assistant message and retry
+      // with lower temperature. Don't let model see its own empty-args history.
+      const allEmpty = toolCalls.every((tc) => {
+        const a = normalizeArguments(tc.function.arguments);
+        return Object.keys(a).length === 0;
+      });
+      if (allEmpty && emptyArgsRetries < 2) {
+        emptyArgsRetries += 1;
+        messages.pop(); // remove the assistant message with empty tool_calls
+        tempOverride = 0.1; // force low temperature for next request
+        continue; // re-enter loop without incrementing any error state
+      }
+      emptyArgsRetries = 0;
+      tempOverride = undefined;
 
       for (const tc of toolCalls) {
         const fullName = tc.function.name;

@@ -55,7 +55,7 @@ export function normalizeToolCalls(
       function: {
         name: fn.name,
         arguments:
-          typeof fn.arguments === 'string'
+          typeof fn.arguments === 'string' && fn.arguments.trim()
             ? fn.arguments
             : JSON.stringify(fn.arguments ?? {}),
       },
