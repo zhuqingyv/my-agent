@@ -1,0 +1,42 @@
+id: "L2-004"
+title: "升 package.json 版本"
+level: "L2"
+category: "read-modify-write"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "把 package.json 的 version 从 1.0.0 升到 1.0.1"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "package.json"
+  - type: tool_called
+    tool_matches: "^fs(-edit)?__(file_edit|write_file)$"
+  - type: file_content
+    path: "package.json"
+    contains: "1.0.1"
+  - type: file_content
+    path: "package.json"
+    contains: "test-project"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 4
+    weight: 0.4
+  - type: duration_max
+    ms: 120000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 180
+  runs: 5
+  max_rounds: null
+  layer: "L2"

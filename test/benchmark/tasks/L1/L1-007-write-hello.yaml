@@ -1,0 +1,34 @@
+id: "L1-007"
+title: "创建 hello.txt"
+level: "L1"
+category: "write-file"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "在当前目录创建 hello.txt 文件，内容为 hi"
+
+hard_assertions:
+  - type: tool_called
+    tool_matches: "^fs(-edit)?__(write_file|file_edit)$"
+  - type: file_exists
+    path: "hello.txt"
+  - type: file_content
+    path: "hello.txt"
+    contains: "hi"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 3
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

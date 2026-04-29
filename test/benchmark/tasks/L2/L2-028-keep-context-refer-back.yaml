@@ -1,0 +1,40 @@
+id: "L2-028"
+title: "引用上轮工具结果"
+level: "L2"
+category: "context-keep"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: "执行 `node -v` 告诉我当前 node 版本"
+    expect:
+      tool_calls_include: ["exec__execute_command"]
+  - user: "刚才那个版本号的主版本是多少？"
+
+hard_assertions:
+  - type: tool_called
+    tool: "exec__execute_command"
+  - type: tool_call_count_max
+    max: 2
+  - type: final_text_min_chars
+    min: 1
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 3
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.4
+  - type: duration_max
+    ms: 150000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 200
+  runs: 5
+  max_rounds: null
+  layer: "L2"

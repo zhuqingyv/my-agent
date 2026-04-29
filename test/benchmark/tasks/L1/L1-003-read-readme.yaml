@@ -1,0 +1,33 @@
+id: "L1-003"
+title: "读 README"
+level: "L1"
+category: "read-file"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "读一下 README.md 的内容"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "README.md"
+  - type: final_text_contains
+    pattern: "Test Project"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

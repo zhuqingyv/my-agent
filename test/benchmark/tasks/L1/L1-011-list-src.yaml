@@ -1,0 +1,33 @@
+id: "L1-011"
+title: "列 src 目录"
+level: "L1"
+category: "list-dir"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "看下 src 目录里有什么文件"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__list_directory"
+    args_contains:
+      path: "src"
+  - type: final_text_contains
+    pattern: "index.js"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

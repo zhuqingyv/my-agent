@@ -1,0 +1,42 @@
+id: "L2-005"
+title: "重命名变量"
+level: "L2"
+category: "read-modify-write"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+  setup:
+    - 'printf "export const helper = () => {\n  const foo = 1;\n  return foo;\n};\n" > src/utils.js'
+
+user_input: "把 src/utils.js 里的变量 foo 全部改名为 bar"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "src/utils.js"
+  - type: tool_called
+    tool_matches: "^fs(-edit)?__(file_edit|write_file)$"
+  - type: file_content
+    path: "src/utils.js"
+    contains: "bar"
+    not_contains: "foo"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 4
+    weight: 0.4
+  - type: duration_max
+    ms: 120000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 180
+  runs: 5
+  max_rounds: null
+  layer: "L2"

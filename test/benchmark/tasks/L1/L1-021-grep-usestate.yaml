@@ -1,0 +1,33 @@
+id: "L1-021"
+title: "搜索 useState"
+level: "L1"
+category: "search"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "在 src 目录下搜索 useState，看哪些文件用了它"
+
+hard_assertions:
+  - type: tool_called
+    tool: "grep__grep"
+    args_contains:
+      pattern: "useState"
+  - type: final_text_contains
+    pattern: "index.js"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

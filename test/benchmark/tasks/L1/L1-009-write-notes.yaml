@@ -1,0 +1,34 @@
+id: "L1-009"
+title: "创建 notes.md"
+level: "L1"
+category: "write-file"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "创建 notes.md，内容是一行 markdown 标题：# 我的笔记"
+
+hard_assertions:
+  - type: tool_called
+    tool_matches: "^fs(-edit)?__(write_file|file_edit)$"
+  - type: file_exists
+    path: "notes.md"
+  - type: file_content
+    path: "notes.md"
+    contains: "我的笔记"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 3
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

@@ -1,0 +1,23 @@
+id: "L0-001"
+title: "最简问候"
+level: "L0"
+category: "connectivity"
+weight: 1.0
+
+user_input: "你好"
+
+hard_assertions:
+  - type: final_text_min_chars
+    min: 1
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 2
+    weight: 1.0
+
+runtime:
+  timeout_sec: 60
+  runs: 1
+  max_rounds: null
+  layer: "L2"

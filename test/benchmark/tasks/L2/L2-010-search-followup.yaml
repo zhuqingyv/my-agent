@@ -1,0 +1,40 @@
+id: "L2-010"
+title: "搜索结果追问"
+level: "L2"
+category: "multi-turn"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: "找一下项目里哪些文件用到了 useState"
+    expect:
+      tool_calls_include: ["grep__grep"]
+  - user: "第一个结果在哪个文件？"
+
+hard_assertions:
+  - type: tool_called
+    tool: "grep__grep"
+    args_contains:
+      pattern: "useState"
+  - type: final_text_contains
+    pattern: ".js"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 3
+    weight: 0.4
+  - type: duration_max
+    ms: 150000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 200
+  runs: 5
+  max_rounds: null
+  layer: "L2"

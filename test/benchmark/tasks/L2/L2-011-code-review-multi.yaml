@@ -1,0 +1,44 @@
+id: "L2-011"
+title: "代码审查多轮"
+level: "L2"
+category: "multi-turn"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: "看下 src/ 下有哪些文件"
+    expect:
+      tool_calls_include: ["fs__list_directory"]
+  - user: "读一下 index.js，有没有什么代码质量问题？"
+    expect:
+      tool_calls_include: ["fs__read_file"]
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__list_directory"
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "src/index.js"
+  - type: final_text_min_chars
+    min: 10
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 15
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 4
+    weight: 0.4
+  - type: duration_max
+    ms: 150000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 200
+  runs: 5
+  max_rounds: null
+  layer: "L2"
