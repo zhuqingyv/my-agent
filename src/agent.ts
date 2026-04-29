@@ -302,6 +302,25 @@ function mcpToolsToOpenAI(connections: McpConnection[]): ChatCompletionTool[] {
   return out;
 }
 
+function findToolSchema(
+  connections: McpConnection[],
+  fullName: string
+): Record<string, any> | null {
+  const sepIdx = fullName.indexOf(TOOL_NAME_SEP);
+  if (sepIdx > 0) {
+    const serverName = fullName.slice(0, sepIdx);
+    const toolName = fullName.slice(sepIdx + TOOL_NAME_SEP.length);
+    const conn = connections.find((c) => c.name === serverName);
+    const tool = conn?.tools.find((t) => t.name === toolName);
+    if (tool?.inputSchema) return tool.inputSchema as Record<string, any>;
+  }
+  for (const conn of connections) {
+    const tool = conn.tools.find((t) => t.name === fullName);
+    if (tool?.inputSchema) return tool.inputSchema as Record<string, any>;
+  }
+  return null;
+}
+
 function routeToolCall(
   connections: McpConnection[],
   fullName: string
@@ -724,6 +743,23 @@ export async function createAgent(
       for (const tc of toolCalls) {
         const fullName = tc.function.name;
         const args = normalizeArguments(tc.function.arguments);
+
+        // Intercept empty args when tool schema has required fields
+        if (Object.keys(args).length === 0) {
+          const schema = findToolSchema(connections, fullName);
+          const required = schema?.required;
+          if (Array.isArray(required) && required.length > 0) {
+            const emptyResult = `Error: tool "${fullName}" requires [${required.join(', ')}] but received empty arguments. Please provide the required parameters.`;
+            yield { type: 'tool:call', name: fullName, args };
+            yield { type: 'tool:result', ok: false, content: emptyResult };
+            messages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: emptyResult,
+            });
+            continue;
+          }
+        }
 
         const callKey = `${fullName}:${JSON.stringify(args)}`;
         const prevErrors = errorHistory.get(callKey) || 0;
