@@ -15,7 +15,10 @@
     "e2e:real": "tsx --test test/e2e-real.ts",
     "init": "tsx src/init.ts",
     "visual": "playwright test --config test/visual/playwright.config.ts",
-    "visual:server": "tsx test/visual/server.ts"
+    "visual:server": "tsx test/visual/server.ts",
+    "benchmark": "tsx test/benchmark/runner/index.ts",
+    "benchmark:L0": "tsx test/benchmark/runner/index.ts --level L0",
+    "benchmark:dry": "tsx test/benchmark/runner/index.ts --dry-run"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
