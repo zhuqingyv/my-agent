@@ -82,8 +82,8 @@ async function main() {
     byLevel.set(t.level, arr);
   }
 
-  // L0 必须存在题目；否则整次 run 无基线，不能判定通过。
-  if (!byLevel.has('L0')) {
+  // L0 必须存在题目（除非用 --level/--task 过滤了特定级别）
+  if (!byLevel.has('L0') && !args.level && !args.task) {
     console.error('\n❌ No L0 tasks found — L0 gate cannot be evaluated.');
     process.exit(EXIT_L0_INVALID);
   }

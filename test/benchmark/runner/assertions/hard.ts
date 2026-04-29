@@ -65,13 +65,23 @@ function normalizePath(p: unknown): string {
   return p.replace(/^\.\//, '').replace(/\/+$/, '');
 }
 
+function matchPath(actual: unknown, expected: unknown): boolean {
+  const na = normalizePath(actual);
+  const ne = normalizePath(expected);
+  if (na === ne) return true;
+  if (typeof expected === 'string' && !expected.includes('/') && typeof actual === 'string') {
+    return na.endsWith('/' + ne) || na === ne;
+  }
+  return false;
+}
+
 function matchArgsContains(record: ToolCallRecord, argsContains?: Record<string, unknown>): boolean {
   if (!argsContains) return true;
   for (const [key, expected] of Object.entries(argsContains)) {
     if (!(key in record.args)) return false;
     const actual = record.args[key];
     if (key === 'path' || key === 'file' || key === 'directory') {
-      if (normalizePath(actual) !== normalizePath(expected)) return false;
+      if (!matchPath(actual, expected)) return false;
     } else if (typeof expected === 'string' && typeof actual === 'string') {
       if (!actual.includes(expected)) return false;
     } else {
