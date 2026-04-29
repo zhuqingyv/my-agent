@@ -1,0 +1,42 @@
+id: "L2-030"
+title: "空答自救：歧义输入也要答"
+level: "L2"
+category: "empty-rescue"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: "..."
+  - user: "算了，换个问题：读一下 package.json 告诉我 name"
+    expect:
+      tool_calls_include: ["fs__read_file"]
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "package.json"
+  - type: final_text_contains
+    contains: "test-project"
+  - type: final_text_min_chars
+    chars: 5
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 3
+    weight: 0.4
+  - type: duration_max
+    ms: 150000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 200
+  runs: 5
+  max_rounds: null
+  layer: "L2"

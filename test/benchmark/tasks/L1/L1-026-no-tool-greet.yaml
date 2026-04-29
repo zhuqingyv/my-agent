@@ -1,0 +1,34 @@
+id: "L1-026"
+title: "问候不应调工具"
+level: "L1"
+category: "no-tool"
+weight: 1.0
+
+user_input: "你好，你是谁？"
+
+hard_assertions:
+  - type: tool_not_called
+    tool: "fs__read_file"
+  - type: tool_not_called
+    tool: "fs__list_directory"
+  - type: tool_not_called
+    tool: "exec__execute_command"
+  - type: tool_not_called
+    tool: "grep__grep"
+  - type: final_text_min_chars
+    chars: 5
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 0
+    weight: 0.5
+
+runtime:
+  timeout_sec: 60
+  runs: 5
+  max_rounds: null
+  layer: "L2"

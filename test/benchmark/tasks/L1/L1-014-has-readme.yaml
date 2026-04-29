@@ -1,0 +1,31 @@
+id: "L1-014"
+title: "检查 README 是否存在"
+level: "L1"
+category: "list-dir"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "当前目录有没有 README 文件？"
+
+hard_assertions:
+  - type: tool_called
+    tool_matches: "^fs__(list_directory|read_file)$"
+  - type: final_text_contains
+    contains: "README"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 3
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

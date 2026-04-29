@@ -1,0 +1,33 @@
+id: "L1-024"
+title: "搜索 helper 定义"
+level: "L1"
+category: "search"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "搜一下 src 目录下哪些地方定义了 helper"
+
+hard_assertions:
+  - type: tool_called
+    tool: "grep__grep"
+    args_contains:
+      pattern: "helper"
+  - type: final_text_contains
+    contains: "utils"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

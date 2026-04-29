@@ -1,0 +1,27 @@
+id: "L0-007"
+title: "创建文件"
+level: "L0"
+category: "connectivity"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "在当前目录创建 hello.txt 文件，内容为 test"
+
+hard_assertions:
+  - type: tool_called
+    tool_matches: "^fs(-edit)?__(write_file|file_edit)$"
+  - type: file_exists
+    path: "hello.txt"
+  - type: file_content
+    path: "hello.txt"
+    contains: "test"
+  - type: no_error_5xx
+
+
+runtime:
+  timeout_sec: 60
+  runs: 1
+  max_rounds: null
+  layer: "L2"

@@ -1,0 +1,33 @@
+id: "L1-016"
+title: "查看当前目录"
+level: "L1"
+category: "exec-cmd"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "执行 pwd 命令看当前目录"
+
+hard_assertions:
+  - type: tool_called
+    tool: "exec__execute_command"
+    args_contains:
+      command: "pwd"
+  - type: final_text_contains
+    regex: "/(?:var|tmp|Users|private|home)\\b"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 3
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

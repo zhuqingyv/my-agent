@@ -1,0 +1,31 @@
+id: "L1-017"
+title: "echo 字符串"
+level: "L1"
+category: "exec-cmd"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "执行 `echo benchmark` 并把输出告诉我"
+
+hard_assertions:
+  - type: tool_called
+    tool: "exec__execute_command"
+  - type: final_text_contains
+    contains: "benchmark"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 3
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

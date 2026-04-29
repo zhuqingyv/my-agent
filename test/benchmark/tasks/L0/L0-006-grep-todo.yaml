@@ -1,0 +1,24 @@
+id: "L0-006"
+title: "搜索 TODO"
+level: "L0"
+category: "connectivity"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+  setup:
+    - 'echo "// TODO: fix later" >> src/index.js'
+
+user_input: "在 src/ 目录里搜索 TODO"
+
+hard_assertions:
+  - type: tool_called
+    tool: "grep__grep"
+  - type: no_error_5xx
+
+
+runtime:
+  timeout_sec: 60
+  runs: 1
+  max_rounds: null
+  layer: "L2"

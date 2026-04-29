@@ -1,0 +1,38 @@
+id: "L2-024"
+title: "列-读-统计行数"
+level: "L2"
+category: "multi-step"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "列一下 src 目录，然后用 wc -l 统计 src/index.js 有多少行，告诉我结果"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__list_directory"
+  - type: tool_called
+    tool: "exec__execute_command"
+    args_contains:
+      command: "wc"
+  - type: final_text_min_chars
+    chars: 5
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 4
+    weight: 0.4
+  - type: duration_max
+    ms: 180000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 240
+  runs: 5
+  max_rounds: null
+  layer: "L2"

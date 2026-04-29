@@ -1,0 +1,38 @@
+id: "L2-008"
+title: "项目评分多轮"
+level: "L2"
+category: "multi-turn"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: "先看一下这个项目怎么样，给个整体评价"
+    expect:
+      tool_calls_include: ["fs__list_directory"]
+  - user: "基于刚才的分析，给个 1-10 分的评分"
+
+hard_assertions:
+  - type: tool_called
+    tool_matches: "^fs__(list_directory|read_file)$"
+  - type: final_text_min_chars
+    chars: 10
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 15
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 4
+    weight: 0.4
+  - type: duration_max
+    ms: 150000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 200
+  runs: 5
+  max_rounds: null
+  layer: "L2"

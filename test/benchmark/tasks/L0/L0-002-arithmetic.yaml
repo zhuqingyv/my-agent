@@ -1,0 +1,19 @@
+id: "L0-002"
+title: "简单算术"
+level: "L0"
+category: "connectivity"
+weight: 1.0
+
+user_input: "1+1 等于几？"
+
+hard_assertions:
+  - type: final_text_contains
+    contains: "2"
+  - type: no_error_5xx
+
+
+runtime:
+  timeout_sec: 60
+  runs: 1
+  max_rounds: null
+  layer: "L2"

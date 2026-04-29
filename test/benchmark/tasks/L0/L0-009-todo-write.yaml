@@ -1,0 +1,19 @@
+id: "L0-009"
+title: "添加 todo"
+level: "L0"
+category: "connectivity"
+weight: 1.0
+
+user_input: "添加一个 todo：review PR"
+
+hard_assertions:
+  - type: tool_called
+    tool: "todo_write"
+  - type: no_error_5xx
+
+
+runtime:
+  timeout_sec: 60
+  runs: 1
+  max_rounds: null
+  layer: "L2"

@@ -67,7 +67,8 @@ function fsErr(op: string, path: string, e: unknown) {
 }
 
 function handleReadFile(args: Record<string, unknown>) {
-  const path = (typeof args.path === 'string' && args.path.trim()) ? args.path.trim() : './package.json';
+  if (typeof args.path !== 'string' || !args.path.trim()) return ok('Error: path parameter is required', true);
+  const path = args.path.trim();
   if (DEVICES.has(path)) return ok(`拒绝读取设备文件: ${path}`, true);
   const offset = typeof args.offset === 'number' && args.offset > 0 ? Math.floor(args.offset) : 1;
   const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : null;

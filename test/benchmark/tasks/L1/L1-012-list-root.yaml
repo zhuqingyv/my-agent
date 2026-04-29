@@ -1,0 +1,31 @@
+id: "L1-012"
+title: "列根目录"
+level: "L1"
+category: "list-dir"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "列出当前目录下的所有文件"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__list_directory"
+  - type: final_text_contains
+    contains: "package.json"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

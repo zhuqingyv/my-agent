@@ -1,0 +1,33 @@
+id: "L1-006"
+title: "读 utils 文件"
+level: "L1"
+category: "read-file"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "读 src/utils.js 文件，里面有什么？"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "src/utils.js"
+  - type: final_text_contains
+    contains: "helper"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

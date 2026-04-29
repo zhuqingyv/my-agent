@@ -1,0 +1,33 @@
+id: "L1-013"
+title: "数 src 下文件"
+level: "L1"
+category: "list-dir"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "src 目录下有几个文件？"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__list_directory"
+    args_contains:
+      path: "src"
+  - type: final_text_contains
+    regex: "\\b2\\b"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 3
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

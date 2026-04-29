@@ -1,0 +1,33 @@
+id: "L1-019"
+title: "cat 读文件"
+level: "L1"
+category: "exec-cmd"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "用 shell 命令 cat 看一下 package.json 的内容"
+
+hard_assertions:
+  - type: tool_called
+    tool: "exec__execute_command"
+    args_contains:
+      command: "cat"
+  - type: final_text_contains
+    contains: "test-project"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

@@ -1,0 +1,33 @@
+id: "L1-002"
+title: "读 package.json 的 version 字段"
+level: "L1"
+category: "read-file"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "读 package.json，告诉我当前版本号"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "package.json"
+  - type: final_text_contains
+    contains: "1.0.0"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 3
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

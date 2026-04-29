@@ -1,0 +1,33 @@
+id: "L1-001"
+title: "读 package.json 的 name 字段"
+level: "L1"
+category: "read-file"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "读 package.json，告诉我 name 字段的值"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "package.json"
+  - type: final_text_contains
+    contains: "test-project"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

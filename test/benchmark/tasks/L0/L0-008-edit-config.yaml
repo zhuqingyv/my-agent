@@ -1,0 +1,24 @@
+id: "L0-008"
+title: "修改 config 文件"
+level: "L0"
+category: "connectivity"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+  setup:
+    - 'echo "{\"port\": 3000}" > config.json'
+
+user_input: "用 fs-edit 工具修改 config.json，把 port 改成 8080"
+
+hard_assertions:
+  - type: tool_called
+    tool_matches: "^fs(-edit)?__(file_edit|write_file)$"
+  - type: no_error_5xx
+
+
+runtime:
+  timeout_sec: 90
+  runs: 1
+  max_rounds: null
+  layer: "L2"

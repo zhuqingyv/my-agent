@@ -1,0 +1,38 @@
+id: "L2-019"
+title: "npm test 无测试脚本"
+level: "L2"
+category: "cmd-failure"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "执行 `npm test`，告诉我有什么输出，不要幻觉结果"
+
+hard_assertions:
+  - type: tool_called
+    tool: "exec__execute_command"
+    args_contains:
+      command: "npm"
+  - type: tool_retry_max
+    max_same_error: 2
+  - type: final_text_min_chars
+    chars: 5
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 3
+    weight: 0.4
+  - type: duration_max
+    ms: 120000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 180
+  runs: 5
+  max_rounds: null
+  layer: "L2"

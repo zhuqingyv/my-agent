@@ -302,6 +302,25 @@ function mcpToolsToOpenAI(connections: McpConnection[]): ChatCompletionTool[] {
   return out;
 }
 
+function findToolSchema(
+  connections: McpConnection[],
+  fullName: string
+): Record<string, any> | null {
+  const sepIdx = fullName.indexOf(TOOL_NAME_SEP);
+  if (sepIdx > 0) {
+    const serverName = fullName.slice(0, sepIdx);
+    const toolName = fullName.slice(sepIdx + TOOL_NAME_SEP.length);
+    const conn = connections.find((c) => c.name === serverName);
+    const tool = conn?.tools.find((t) => t.name === toolName);
+    if (tool?.inputSchema) return tool.inputSchema as Record<string, any>;
+  }
+  for (const conn of connections) {
+    const tool = conn.tools.find((t) => t.name === fullName);
+    if (tool?.inputSchema) return tool.inputSchema as Record<string, any>;
+  }
+  return null;
+}
+
 function routeToolCall(
   connections: McpConnection[],
   fullName: string
@@ -524,6 +543,8 @@ export async function createAgent(
     persistPending();
 
     let finalText = '';
+    let emptyArgsRetries = 0;
+    let tempOverride: number | undefined;
 
     for (let loop = 0; loop < maxLoops; loop++) {
       const compactResult = await maybeCompact(signal);
@@ -539,8 +560,8 @@ export async function createAgent(
       const request: Parameters<typeof client.chat.completions.create>[0] = {
         model: config.model.model,
         messages: requestMessages,
-        temperature: config.model.temperature ?? 0.6,
-        frequency_penalty: config.model.frequencyPenalty ?? 1.1,
+        temperature: tempOverride ?? config.model.temperature ?? 0.6,
+        frequency_penalty: tempOverride !== undefined ? 0 : (config.model.frequencyPenalty ?? 1.1),
         ...(config.model.maxTokens ? { max_tokens: config.model.maxTokens } : {}),
       };
       if (tools.length > 0) {
@@ -721,9 +742,41 @@ export async function createAgent(
         tool_calls: toolCalls,
       });
 
+      // P0-b: If ALL tool_calls have empty args, pop the assistant message and retry
+      // with lower temperature. Don't let model see its own empty-args history.
+      const allEmpty = toolCalls.every((tc) => {
+        const a = normalizeArguments(tc.function.arguments);
+        return Object.keys(a).length === 0;
+      });
+      if (allEmpty && emptyArgsRetries < 2) {
+        emptyArgsRetries += 1;
+        messages.pop(); // remove the assistant message with empty tool_calls
+        tempOverride = 0.1; // force low temperature for next request
+        continue; // re-enter loop without incrementing any error state
+      }
+      emptyArgsRetries = 0;
+      tempOverride = undefined;
+
       for (const tc of toolCalls) {
         const fullName = tc.function.name;
         const args = normalizeArguments(tc.function.arguments);
+
+        // Intercept empty args when tool schema has required fields
+        if (Object.keys(args).length === 0) {
+          const schema = findToolSchema(connections, fullName);
+          const required = schema?.required;
+          if (Array.isArray(required) && required.length > 0) {
+            const emptyResult = `Error: tool "${fullName}" requires [${required.join(', ')}] but received empty arguments. Please provide the required parameters.`;
+            yield { type: 'tool:call', name: fullName, args };
+            yield { type: 'tool:result', ok: false, content: emptyResult };
+            messages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: emptyResult,
+            });
+            continue;
+          }
+        }
 
         const callKey = `${fullName}:${JSON.stringify(args)}`;
         const prevErrors = errorHistory.get(callKey) || 0;
@@ -833,7 +886,14 @@ export async function createAgent(
         }
 
         if (isError) {
-          errorHistory.set(callKey, prevErrors + 1);
+          const newCount = prevErrors + 1;
+          errorHistory.set(callKey, newCount);
+          if (newCount === 1) {
+            const schema = findToolSchema(connections, fullName);
+            const requiredHint = Array.isArray(schema?.required) ? ` Required parameters: [${schema.required.join(', ')}].` : '';
+            const hint = `The tool call to "${fullName}" failed. Please check your parameters and try again.${requiredHint}`;
+            messages.push({ role: 'user', content: hint });
+          }
         } else {
           errorHistory.delete(callKey);
         }

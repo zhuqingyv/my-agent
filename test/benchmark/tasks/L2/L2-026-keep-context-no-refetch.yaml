@@ -1,0 +1,40 @@
+id: "L2-026"
+title: "上下文保持：不重复调工具"
+level: "L2"
+category: "context-keep"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: "读 src/index.js 告诉我内容"
+    expect:
+      tool_calls_include: ["fs__read_file"]
+  - user: "它用到了哪个 React hook？"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "src/index.js"
+  - type: final_text_contains
+    contains: "useState"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.4
+  - type: duration_max
+    ms: 150000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 200
+  runs: 5
+  max_rounds: null
+  layer: "L2"

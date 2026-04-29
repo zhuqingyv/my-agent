@@ -9,11 +9,11 @@ const MAX_LINES = 100;
 
 const TOOLS = [
   { name: 'grep',
-    description: '在文件中搜索文本模式，返回匹配行和行号。调用系统 grep，截断前 100 行。',
+    description: '在文件中搜索文本模式，返回匹配行和行号。调用系统 grep（默认递归），截断前 100 行。',
     inputSchema: { type: 'object', required: ['pattern', 'path'], properties: {
       pattern: { type: 'string', description: '搜索模式（正则或纯文本）' },
       path: { type: 'string', description: '文件或目录路径' },
-      recursive: { type: 'boolean', description: '是否递归搜索子目录', default: false },
+      recursive: { type: 'boolean', description: '是否递归搜索子目录（默认 true；保留参数向后兼容）', default: true },
     } } },
 ];
 
@@ -26,10 +26,9 @@ const errMsg = (e: unknown) => e instanceof Error ? e.message : String(e);
 function handleGrep(args: Record<string, unknown>) {
   const pattern = args.pattern;
   const path = args.path;
-  const recursive = args.recursive === true;
   if (typeof pattern !== 'string' || !pattern) return ok('grep: "pattern" must be a non-empty string', true);
   if (typeof path !== 'string' || !path) return ok('grep: "path" must be a non-empty string', true);
-  const flags = recursive ? ['-rn', '-E', '--'] : ['-n', '-E', '--'];
+  const flags = ['-rn', '-E', '--'];
   try {
     const out = execFileSync('grep', [...flags, pattern, path], {
       encoding: 'utf-8', maxBuffer: 4 * 1024 * 1024, timeout: 20000,

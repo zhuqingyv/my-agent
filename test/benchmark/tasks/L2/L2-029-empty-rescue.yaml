@@ -1,0 +1,40 @@
+id: "L2-029"
+title: "空答自救：必须回应"
+level: "L2"
+category: "empty-rescue"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: " "
+  - user: "你刚才没有回应，现在请回答：当前目录有哪些文件？"
+    expect:
+      tool_calls_include: ["fs__list_directory"]
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__list_directory"
+  - type: final_text_contains
+    contains: "package.json"
+  - type: final_text_min_chars
+    chars: 5
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 3
+    weight: 0.4
+  - type: duration_max
+    ms: 150000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 200
+  runs: 5
+  max_rounds: null
+  layer: "L2"
