@@ -15,7 +15,7 @@ hard_assertions:
     args_contains:
       pattern: "helper"
   - type: final_text_contains
-    pattern: "utils"
+    contains: "utils"
   - type: no_error_5xx
 
 soft_assertions:

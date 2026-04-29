@@ -17,9 +17,9 @@ hard_assertions:
   - type: tool_called
     tool: "fs__list_directory"
   - type: final_text_contains
-    pattern: "package.json"
+    contains: "package.json"
   - type: final_text_min_chars
-    min: 5
+    chars: 5
   - type: no_error_5xx
 
 soft_assertions:

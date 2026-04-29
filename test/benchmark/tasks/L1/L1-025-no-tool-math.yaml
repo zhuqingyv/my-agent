@@ -16,7 +16,7 @@ hard_assertions:
   - type: tool_not_called
     tool: "grep__grep"
   - type: final_text_contains
-    pattern: "5"
+    contains: "5"
   - type: no_error_5xx
 
 soft_assertions:

@@ -17,7 +17,7 @@ hard_assertions:
   - type: tool_called
     tool: "fs__read_file"
   - type: final_text_contains
-    pattern: "useState"
+    contains: "useState"
   - type: no_error_5xx
 
 soft_assertions:

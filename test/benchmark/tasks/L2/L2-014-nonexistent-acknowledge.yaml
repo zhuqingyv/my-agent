@@ -13,7 +13,7 @@ hard_assertions:
   - type: tool_retry_max
     max_same_error: 2
   - type: final_text_min_chars
-    min: 5
+    chars: 5
   - type: no_error_5xx
 
 soft_assertions:

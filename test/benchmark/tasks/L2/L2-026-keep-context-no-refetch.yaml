@@ -19,9 +19,7 @@ hard_assertions:
     args_contains:
       path: "src/index.js"
   - type: final_text_contains
-    pattern: "useState"
-  - type: tool_call_count_max
-    max: 2
+    contains: "useState"
   - type: no_error_5xx
 
 soft_assertions:

@@ -15,7 +15,7 @@ hard_assertions:
     args_contains:
       pattern: "useState"
   - type: final_text_contains
-    pattern: "index.js"
+    contains: "index.js"
   - type: no_error_5xx
 
 soft_assertions:

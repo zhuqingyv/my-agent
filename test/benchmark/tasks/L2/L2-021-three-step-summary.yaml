@@ -17,7 +17,7 @@ hard_assertions:
     args_contains:
       path: "README.md"
   - type: final_text_min_chars
-    min: 15
+    chars: 15
   - type: no_error_5xx
 
 soft_assertions:

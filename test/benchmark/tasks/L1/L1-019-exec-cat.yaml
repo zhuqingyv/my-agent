@@ -15,7 +15,7 @@ hard_assertions:
     args_contains:
       command: "cat"
   - type: final_text_contains
-    pattern: "test-project"
+    contains: "test-project"
   - type: no_error_5xx
 
 soft_assertions:

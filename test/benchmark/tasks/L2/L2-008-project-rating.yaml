@@ -17,7 +17,7 @@ hard_assertions:
   - type: tool_called
     tool_matches: "^fs__(list_directory|read_file)$"
   - type: final_text_min_chars
-    min: 10
+    chars: 10
   - type: no_error_5xx
 
 soft_assertions:

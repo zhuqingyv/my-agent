@@ -15,7 +15,7 @@ hard_assertions:
     args_contains:
       command: "ls"
   - type: final_text_contains
-    pattern: "package.json"
+    contains: "package.json"
   - type: no_error_5xx
 
 soft_assertions:

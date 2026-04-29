@@ -19,7 +19,7 @@ hard_assertions:
     args_contains:
       pattern: "useState"
   - type: final_text_contains
-    pattern: ".js"
+    contains: ".js"
   - type: no_error_5xx
 
 soft_assertions:

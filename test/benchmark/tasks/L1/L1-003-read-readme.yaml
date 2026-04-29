@@ -15,7 +15,7 @@ hard_assertions:
     args_contains:
       path: "README.md"
   - type: final_text_contains
-    pattern: "Test Project"
+    contains: "Test Project"
   - type: no_error_5xx
 
 soft_assertions:

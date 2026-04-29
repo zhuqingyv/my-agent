@@ -18,9 +18,9 @@ hard_assertions:
   - type: tool_called
     tool_matches: "^fs__(list_directory|read_file)$"
   - type: final_text_contains
-    pattern: "react"
+    contains: "react"
   - type: final_text_min_chars
-    min: 20
+    chars: 20
   - type: no_error_5xx
 
 soft_assertions:

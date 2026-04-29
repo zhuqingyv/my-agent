@@ -15,7 +15,7 @@ hard_assertions:
     args_contains:
       path: "src"
   - type: final_text_contains
-    pattern: "2"
+    contains: "2"
   - type: no_error_5xx
 
 soft_assertions:

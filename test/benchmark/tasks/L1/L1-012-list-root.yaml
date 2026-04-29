@@ -13,7 +13,7 @@ hard_assertions:
   - type: tool_called
     tool: "fs__list_directory"
   - type: final_text_contains
-    pattern: "package.json"
+    contains: "package.json"
   - type: no_error_5xx
 
 soft_assertions:

@@ -15,7 +15,7 @@ hard_assertions:
     args_contains:
       path: "src/utils.js"
   - type: final_text_contains
-    pattern: "helper"
+    contains: "helper"
   - type: no_error_5xx
 
 soft_assertions:

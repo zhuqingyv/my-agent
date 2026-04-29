@@ -19,7 +19,7 @@ hard_assertions:
     args_contains:
       path: "package.json"
   - type: final_text_contains
-    pattern: "19"
+    contains: "19"
   - type: no_error_5xx
 
 soft_assertions:

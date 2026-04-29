@@ -23,7 +23,7 @@ hard_assertions:
     args_contains:
       path: "src/index.js"
   - type: final_text_min_chars
-    min: 10
+    chars: 10
   - type: no_error_5xx
 
 soft_assertions:

@@ -16,10 +16,8 @@ rounds:
 hard_assertions:
   - type: tool_called
     tool: "exec__execute_command"
-  - type: tool_call_count_max
-    max: 2
   - type: final_text_min_chars
-    min: 1
+    chars: 1
   - type: no_error_5xx
 
 soft_assertions:

@@ -8,7 +8,7 @@ user_input: "你好"
 
 hard_assertions:
   - type: final_text_min_chars
-    min: 1
+    chars: 1
   - type: no_error_5xx
 
 soft_assertions:

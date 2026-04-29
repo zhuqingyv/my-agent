@@ -13,7 +13,7 @@ hard_assertions:
   - type: tool_called
     tool: "exec__execute_command"
   - type: final_text_contains
-    pattern: "benchmark"
+    contains: "benchmark"
   - type: no_error_5xx
 
 soft_assertions:

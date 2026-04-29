@@ -15,7 +15,7 @@ hard_assertions:
     args_contains:
       path: "package.json"
   - type: final_text_contains
-    pattern: "1.0.0"
+    contains: "1.0.0"
   - type: no_error_5xx
 
 soft_assertions:
