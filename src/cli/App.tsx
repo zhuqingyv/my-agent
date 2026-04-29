@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Box, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 import type { AgentConfig, McpConnection, Agent } from '../mcp/types.js';
 import { createUiStore } from './state/store.js';
 import { useAgent } from './hooks/useAgent.js';
@@ -12,7 +12,6 @@ import {
 import type { UiImage } from './state/types.js';
 import { Banner } from './components/Banner.js';
 import { ChatHistory } from './components/ChatHistory.js';
-import { Markdown } from './components/Markdown.js';
 import { ThinkingBar } from './components/ThinkingBar.js';
 import { InputBox } from './components/InputBox.js';
 import { StatusBar } from './components/StatusBar.js';
@@ -196,7 +195,7 @@ export function App({ config, connections, agent, debug }: AppProps) {
 
       {inFlightText ? (
         <Box marginTop={1}>
-          <Markdown source={inFlightText} />
+          <Text>{inFlightText}</Text>
         </Box>
       ) : null}
 

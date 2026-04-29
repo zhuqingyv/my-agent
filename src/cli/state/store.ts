@@ -8,12 +8,28 @@ export interface UiState {
 
 type Listener = () => void;
 
+const TOKEN_FLUSH_INTERVAL_MS = 16;
+
 export function createUiStore() {
   let state: UiState = { messages: [], thinking: null, inFlightText: '' };
   const listeners = new Set<Listener>();
 
+  let tokenBuffer = '';
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
   function notify() {
     listeners.forEach((l) => l());
+  }
+
+  function flushTokenBuffer() {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (tokenBuffer.length === 0) return;
+    state = { ...state, inFlightText: state.inFlightText + tokenBuffer };
+    tokenBuffer = '';
+    notify();
   }
 
   return {
@@ -26,11 +42,17 @@ export function createUiStore() {
     },
 
     pushMessage(msg: Message) {
+      flushTokenBuffer();
       state = { ...state, messages: [...state.messages, msg] };
       notify();
     },
 
     startThinking() {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      tokenBuffer = '';
       state = {
         ...state,
         thinking: {
@@ -51,16 +73,19 @@ export function createUiStore() {
     },
 
     stopThinking() {
+      flushTokenBuffer();
       state = { ...state, thinking: null };
       notify();
     },
 
     appendToken(text: string) {
-      state = { ...state, inFlightText: state.inFlightText + text };
-      notify();
+      tokenBuffer += text;
+      if (flushTimer) return;
+      flushTimer = setTimeout(flushTokenBuffer, TOKEN_FLUSH_INTERVAL_MS);
     },
 
     flushInFlight(): string {
+      flushTokenBuffer();
       const text = state.inFlightText;
       state = { ...state, inFlightText: '' };
       notify();
@@ -68,6 +93,11 @@ export function createUiStore() {
     },
 
     clearMessages() {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      tokenBuffer = '';
       state = { ...state, messages: [], inFlightText: '' };
       notify();
     },
