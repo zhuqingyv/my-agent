@@ -1,0 +1,28 @@
+id: "L0-004"
+title: "读 package.json"
+level: "L0"
+category: "connectivity"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "读一下 package.json"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "package.json"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 1.0
+
+runtime:
+  timeout_sec: 60
+  runs: 1
+  max_rounds: null
+  layer: "L2"

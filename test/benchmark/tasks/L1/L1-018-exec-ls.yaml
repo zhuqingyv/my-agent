@@ -1,0 +1,33 @@
+id: "L1-018"
+title: "ls 命令查看目录"
+level: "L1"
+category: "exec-cmd"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "用 shell 命令 ls 列出当前目录"
+
+hard_assertions:
+  - type: tool_called
+    tool: "exec__execute_command"
+    args_contains:
+      command: "ls"
+  - type: final_text_contains
+    pattern: "package.json"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

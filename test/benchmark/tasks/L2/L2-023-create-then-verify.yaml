@@ -1,0 +1,39 @@
+id: "L2-023"
+title: "创建文件后验证"
+level: "L2"
+category: "multi-step"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "创建 hello.ts 文件，内容是 console.log('hello')，然后确认文件已创建"
+
+hard_assertions:
+  - type: tool_called
+    tool_matches: "^fs(-edit)?__(write_file|file_edit)$"
+  - type: tool_called
+    tool_matches: "^fs__(read_file|list_directory)$"
+  - type: file_exists
+    path: "hello.ts"
+  - type: file_content
+    path: "hello.ts"
+    contains: "console.log"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 4
+    weight: 0.4
+  - type: duration_max
+    ms: 180000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 240
+  runs: 5
+  max_rounds: null
+  layer: "L2"

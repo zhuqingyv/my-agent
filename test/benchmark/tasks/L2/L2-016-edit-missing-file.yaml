@@ -1,0 +1,41 @@
+id: "L2-016"
+title: "编辑不存在文件后恢复"
+level: "L2"
+category: "error-recovery"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: "在 notexist.md 里把 foo 改成 bar"
+  - user: "那直接创建一个 notes.md，内容是 bar"
+
+hard_assertions:
+  - type: tool_called
+    tool_matches: "^fs(-edit)?__(file_edit|write_file)$"
+  - type: file_exists
+    path: "notes.md"
+  - type: file_content
+    path: "notes.md"
+    contains: "bar"
+  - type: tool_retry_max
+    max_same_error: 2
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 5
+    weight: 0.4
+  - type: duration_max
+    ms: 180000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 240
+  runs: 5
+  max_rounds: null
+  layer: "L2"

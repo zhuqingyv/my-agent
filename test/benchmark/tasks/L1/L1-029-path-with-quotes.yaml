@@ -1,0 +1,33 @@
+id: "L1-029"
+title: "带引号的路径"
+level: "L1"
+category: "tolerance"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: '读 "package.json" 文件，告诉我 name 的值'
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "package.json"
+  - type: final_text_contains
+    pattern: "test-project"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.5
+  - type: tool_call_count_max
+    max: 2
+    weight: 0.5
+
+runtime:
+  timeout_sec: 120
+  runs: 5
+  max_rounds: null
+  layer: "L2"

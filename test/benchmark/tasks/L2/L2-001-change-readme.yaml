@@ -1,0 +1,42 @@
+id: "L2-001"
+title: "改 README 版本号"
+level: "L2"
+category: "read-modify-write"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+  setup:
+    - 'echo "VERSION: 1.0.0" > README.md'
+
+user_input: "把 README 里的版本号从 1.0.0 改成 2.0.0"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "README.md"
+  - type: tool_called
+    tool_matches: "^fs(-edit)?__(file_edit|write_file)$"
+  - type: file_content
+    path: "README.md"
+    contains: "2.0.0"
+    not_contains: "1.0.0"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 5
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 4
+    weight: 0.4
+  - type: duration_max
+    ms: 120000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 180
+  runs: 5
+  max_rounds: null
+  layer: "L2"

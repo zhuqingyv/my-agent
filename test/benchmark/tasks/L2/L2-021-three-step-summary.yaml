@@ -1,0 +1,38 @@
+id: "L2-021"
+title: "三步总结任务"
+level: "L2"
+category: "multi-step"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "帮我做三件事：1. 看看项目根目录结构 2. 读下 README 3. 总结这个项目是做什么的"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__list_directory"
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "README.md"
+  - type: final_text_min_chars
+    min: 15
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 20
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 5
+    weight: 0.4
+  - type: duration_max
+    ms: 180000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 240
+  runs: 5
+  max_rounds: null
+  layer: "L2"

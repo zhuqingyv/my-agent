@@ -1,0 +1,26 @@
+id: "L0-005"
+title: "执行 echo 命令"
+level: "L0"
+category: "connectivity"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+user_input: "执行命令 `echo hello`"
+
+hard_assertions:
+  - type: tool_called
+    tool: "exec__execute_command"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 3
+    weight: 1.0
+
+runtime:
+  timeout_sec: 60
+  runs: 1
+  max_rounds: null
+  layer: "L2"

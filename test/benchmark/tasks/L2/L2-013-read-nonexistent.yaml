@@ -1,0 +1,40 @@
+id: "L2-013"
+title: "读不存在的文件后恢复"
+level: "L2"
+category: "error-recovery"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: "读一下 /nonexistent/file.txt"
+  - user: "那读 package.json 吧"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "package.json"
+  - type: tool_retry_max
+    max_same_error: 2
+  - type: final_text_contains
+    pattern: "test-project"
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 5
+    weight: 0.4
+  - type: duration_max
+    ms: 180000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 240
+  runs: 5
+  max_rounds: null
+  layer: "L2"

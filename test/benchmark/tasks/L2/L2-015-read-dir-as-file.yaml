@@ -1,0 +1,40 @@
+id: "L2-015"
+title: "误读目录后恢复"
+level: "L2"
+category: "error-recovery"
+weight: 1.0
+
+fixture:
+  project: "simple-node-project"
+
+rounds:
+  - user: "读一下 src 这个文件的内容"
+  - user: "那就列一下 src 目录，再读里面的 index.js"
+
+hard_assertions:
+  - type: tool_called
+    tool: "fs__list_directory"
+  - type: tool_called
+    tool: "fs__read_file"
+    args_contains:
+      path: "src/index.js"
+  - type: tool_retry_max
+    max_same_error: 2
+  - type: no_error_5xx
+
+soft_assertions:
+  - type: final_text_min_len
+    chars: 10
+    weight: 0.3
+  - type: tool_call_count_max
+    max: 5
+    weight: 0.4
+  - type: duration_max
+    ms: 180000
+    weight: 0.3
+
+runtime:
+  timeout_sec: 240
+  runs: 5
+  max_rounds: null
+  layer: "L2"
