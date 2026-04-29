@@ -38,7 +38,7 @@ export interface CreateAgentOptions {
 }
 
 const TOOL_NAME_SEP = '__';
-const DEFAULT_MAX_LOOPS = 20;
+const DEFAULT_MAX_LOOPS = 200;
 const CREATE_TASK_TOOL_NAME = 'create_task';
 const DANGER_EXEC_TOOLS = new Set<string>([
   'exec-mcp__execute_command',
@@ -547,6 +547,15 @@ export async function createAgent(
     let tempOverride: number | undefined;
 
     for (let loop = 0; loop < maxLoops; loop++) {
+      // Warn agent when approaching loop limit
+      const remaining = maxLoops - loop;
+      if (remaining === 5) {
+        messages.push({
+          role: 'user',
+          content: `[system] You have only 5 loops remaining (${loop}/${maxLoops} used). If you are stuck in a loop, stop and summarize what you have done so far. If you still need more steps to complete the task, continue working.`,
+        });
+      }
+
       const compactResult = await maybeCompact(signal);
       if (compactResult.compacted) {
         yield { type: 'compact:done', freed: compactResult.freed };
