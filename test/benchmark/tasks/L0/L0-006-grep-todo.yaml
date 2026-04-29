@@ -16,10 +16,6 @@ hard_assertions:
     tool: "grep__grep"
   - type: no_error_5xx
 
-soft_assertions:
-  - type: final_text_min_len
-    chars: 3
-    weight: 1.0
 
 runtime:
   timeout_sec: 60

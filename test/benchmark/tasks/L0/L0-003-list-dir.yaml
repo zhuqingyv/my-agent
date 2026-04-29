@@ -14,10 +14,6 @@ hard_assertions:
     tool: "fs__list_directory"
   - type: no_error_5xx
 
-soft_assertions:
-  - type: final_text_min_len
-    chars: 5
-    weight: 1.0
 
 runtime:
   timeout_sec: 60

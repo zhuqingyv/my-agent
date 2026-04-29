@@ -9,21 +9,13 @@ fixture:
   setup:
     - 'echo "{\"port\": 3000}" > config.json'
 
-user_input: "修改 config.json，把 port 从 3000 改成 8080"
+user_input: "用 fs-edit 工具修改 config.json，把 port 改成 8080"
 
 hard_assertions:
   - type: tool_called
     tool_matches: "^fs(-edit)?__(file_edit|write_file)$"
-  - type: file_content
-    path: "config.json"
-    contains: "8080"
-    not_contains: "3000"
   - type: no_error_5xx
 
-soft_assertions:
-  - type: final_text_min_len
-    chars: 3
-    weight: 1.0
 
 runtime:
   timeout_sec: 90

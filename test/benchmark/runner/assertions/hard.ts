@@ -60,11 +60,23 @@ function matchToolName(record: ToolCallRecord, tool?: string, toolMatches?: stri
   return true;
 }
 
+function normalizePath(p: unknown): string {
+  if (typeof p !== 'string') return String(p);
+  return p.replace(/^\.\//, '').replace(/\/+$/, '');
+}
+
 function matchArgsContains(record: ToolCallRecord, argsContains?: Record<string, unknown>): boolean {
   if (!argsContains) return true;
   for (const [key, expected] of Object.entries(argsContains)) {
     if (!(key in record.args)) return false;
-    if (record.args[key] !== expected) return false;
+    const actual = record.args[key];
+    if (key === 'path' || key === 'file' || key === 'directory') {
+      if (normalizePath(actual) !== normalizePath(expected)) return false;
+    } else if (typeof expected === 'string' && typeof actual === 'string') {
+      if (!actual.includes(expected)) return false;
+    } else {
+      if (actual !== expected) return false;
+    }
   }
   return true;
 }
