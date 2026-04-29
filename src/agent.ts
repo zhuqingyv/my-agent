@@ -547,13 +547,11 @@ export async function createAgent(
     let tempOverride: number | undefined;
 
     for (let loop = 0; loop < maxLoops; loop++) {
-      // Warn agent when approaching loop limit
+      // Warn agent when approaching loop limit by appending to system prompt
       const remaining = maxLoops - loop;
+      let loopWarning = '';
       if (remaining === 5) {
-        messages.push({
-          role: 'user',
-          content: `[system] You have only 5 loops remaining (${loop}/${maxLoops} used). If you are stuck in a loop, stop and summarize what you have done so far. If you still need more steps to complete the task, continue working.`,
-        });
+        loopWarning = `\n\n[WARNING] You have only 5 loops remaining (${loop}/${maxLoops} used). If you are stuck in a loop, stop and summarize what you have done so far. If you still need more steps to complete the task, continue working.`;
       }
 
       const compactResult = await maybeCompact(signal);
@@ -562,8 +560,9 @@ export async function createAgent(
       }
 
       const stateStr = renderStackState(stack);
-      const requestMessages = stateStr
-        ? [{ ...messages[0], content: (messages[0] as any).content + '\n' + stateStr }, ...messages.slice(1)]
+      const suffix = (stateStr || '') + loopWarning;
+      const requestMessages = suffix
+        ? [{ ...messages[0], content: (messages[0] as any).content + '\n' + suffix }, ...messages.slice(1)]
         : [...messages];
 
       const request: Parameters<typeof client.chat.completions.create>[0] = {
@@ -897,12 +896,6 @@ export async function createAgent(
         if (isError) {
           const newCount = prevErrors + 1;
           errorHistory.set(callKey, newCount);
-          if (newCount === 1) {
-            const schema = findToolSchema(connections, fullName);
-            const requiredHint = Array.isArray(schema?.required) ? ` Required parameters: [${schema.required.join(', ')}].` : '';
-            const hint = `The tool call to "${fullName}" failed. Please check your parameters and try again.${requiredHint}`;
-            messages.push({ role: 'user', content: hint });
-          }
         } else {
           errorHistory.delete(callKey);
         }
