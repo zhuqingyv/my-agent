@@ -100,7 +100,9 @@ test('/model use switches by matching profile id', async () => {
   await withTempCwd(async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ma-model-command-home-'));
     const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = home;
+    process.env.USERPROFILE = home;
     try {
       fs.mkdirSync(path.join(home, '.my-agent'), { recursive: true });
       fs.writeFileSync(
@@ -129,6 +131,8 @@ test('/model use switches by matching profile id', async () => {
     } finally {
       if (originalHome === undefined) delete process.env.HOME;
       else process.env.HOME = originalHome;
+      if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = originalUserProfile;
       fs.rmSync(home, { recursive: true, force: true });
     }
   });

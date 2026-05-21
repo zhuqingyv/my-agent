@@ -12,10 +12,14 @@ function mktmp(prefix: string): string {
 
 async function withEnv<T>(env: Record<string, string>, fn: () => Promise<T>): Promise<T> {
   const original: Record<string, string | undefined> = {};
+  const normalizedEnv = { ...env };
+  if (env.HOME && !normalizedEnv.USERPROFILE) {
+    normalizedEnv.USERPROFILE = env.HOME;
+  }
   const origFetch = globalThis.fetch;
-  for (const k of Object.keys(env)) {
+  for (const k of Object.keys(normalizedEnv)) {
     original[k] = process.env[k];
-    process.env[k] = env[k];
+    process.env[k] = normalizedEnv[k];
   }
   try {
     return await fn();

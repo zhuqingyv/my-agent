@@ -11,9 +11,13 @@ function mktmp(prefix: string): string {
 
 function withEnv<T>(env: Record<string, string>, fn: () => T): T {
   const original: Record<string, string | undefined> = {};
-  for (const k of Object.keys(env)) {
+  const normalizedEnv = { ...env };
+  if (env.HOME && !normalizedEnv.USERPROFILE) {
+    normalizedEnv.USERPROFILE = env.HOME;
+  }
+  for (const k of Object.keys(normalizedEnv)) {
     original[k] = process.env[k];
-    process.env[k] = env[k];
+    process.env[k] = normalizedEnv[k];
   }
   const origCwd = process.cwd();
   try {
