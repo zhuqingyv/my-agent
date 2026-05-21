@@ -1,7 +1,7 @@
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import type { ProviderCodec } from '../types.js';
 
-function stripProviderFields(message: ChatCompletionMessageParam): ChatCompletionMessageParam {
+export function stripProviderFields(message: ChatCompletionMessageParam): ChatCompletionMessageParam {
   if ((message as any).reasoning_content === undefined) return message;
   const copy: Record<string, unknown> = { ...(message as any) };
   delete copy.reasoning_content;
