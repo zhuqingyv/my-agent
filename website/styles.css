@@ -219,6 +219,54 @@ h3 {
   padding: 0 7vw 88px;
 }
 
+.compact-heading {
+  margin-bottom: 18px;
+}
+
+.compact-heading h2 {
+  max-width: 980px;
+  font-size: clamp(28px, 4vw, 50px);
+}
+
+.tui-preview {
+  display: block;
+  width: min(1160px, 100%);
+  height: auto;
+  border: 1px solid #282b35;
+  border-radius: 8px;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.42), 0 0 46px rgba(255, 107, 231, 0.12);
+}
+
+.proof-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: -42px 7vw 86px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.proof-strip div {
+  min-height: 116px;
+  padding: 22px;
+  background: #0d0e12;
+}
+
+.proof-strip strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--pink-2);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.proof-strip span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .terminal {
   width: min(980px, 100%);
   border: 1px solid #34313d;
@@ -404,9 +452,16 @@ h3 {
   }
 
   .terminal-band,
-  .section {
+  .section,
+  .proof-strip {
     padding-left: 22px;
     padding-right: 22px;
+  }
+
+  .proof-strip {
+    grid-template-columns: 1fr;
+    margin: 0 22px 56px;
+    padding: 0;
   }
 
   .terminal pre,

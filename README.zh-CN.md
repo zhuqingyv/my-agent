@@ -1,34 +1,46 @@
 # MA
 [English](README.md) | **中文**
 
-MA 是一个本地优先、多模型的终端编程 Agent。
+DeepSeek 无脑配置，本地小模型也能变生产力。
 
-它面向经常在本地模型和远程 API 之间切换、需要在真实仓库里完成工作的开发者。目标不是做一个炫技聊天壳，而是做一个配置舒服、键盘友好、能长期工作的终端 Agent。
+MA 的核心不是“又接了一个模型”，而是两件事：远程模型配置必须无脑，本地小模型必须能做真实项目。DeepSeek 走交互式配置，LM Studio/Qwen 则通过长上下文、工具调用加固、模型切换和 benchmark 驱动修复，把小模型转化成能持续工作的生产力。
 
 `v0.1.0-alpha` 当前支持 LM Studio 本地模型和 DeepSeek 官方 API。后续会继续扩展 GLM、Qwen、Kimi、MiniMax 等 OpenAI-compatible provider。
 
 官网：https://zhuqingyv.github.io/my-agent/  
 发布页：https://github.com/zhuqingyv/my-agent/releases/tag/v0.1.0-alpha
 
+![MA 终端界面预览](website/assets/tui-preview.svg)
+
+## 噱头和证据
+
+- **本地小模型能变生产力**：MA 的 alpha gate 用 LM Studio + 本地 Qwen3-30B 跑 70 道 L0-L2 任务。
+- **DeepSeek 是无脑 fallback**：`ma init` 发现模型、安全保存 key、写好可用 profile，不让用户手搓配置。
+- **近似无限工作空间**：自动检测 context window、显示占用、压缩输出，面向长时间本地 Agent 循环设计。
+- **小模型优化是产品本体**：Qwen/LM Studio 采样参数、图片 payload 兼容、tool-call 自愈、消息完整性都进入测试和发布门槛。
+- **Agent 工具内置**：shell、文件读写、结构化编辑、grep、web 初始化后直接可用。
+
 ## 为什么是 MA
 
-- **默认多模型**：支持 LM Studio 本地模型和 DeepSeek profile，通过 `/model` 切换。
-- **初始化体验好**：`ma init` 是交互式流程，可以发现模型并写入可用配置。
-- **远程密钥更安全**：DeepSeek API Key 存在 macOS Keychain，配置文件只保存 `secretRef`。
-- **真实项目工具**：内置 shell、文件读写、结构化编辑、grep、web 等 MCP 工具。
-- **键盘优先 TUI**：支持斜杠指令提示、Tab 补全、会话恢复、回退、模型选择器。
-- **项目指令**：读取项目和全局 `AGENT.md`。
-- **技能系统**：支持项目内 `.ma/skills/*.md`，用 YAML frontmatter 定义命令。
+很多终端 AI 工具默认 hosted model 才是产品。MA 的判断是：工作流才是产品。DeepSeek 要配置到“别让我想”，本地 Qwen 要优化到“能一直干活”，这样 token 成本和上下文压力才不会把 Agent 用法卡死。
+
+所以 MA 的产品优先级也不同：
+
+- DeepSeek 一轮配置直接产出可用 profile
+- 本地模型用 profile 管理，而不是一个全局字符串
+- 用本地 benchmark gate 验证小模型生产力，不靠截图 demo
+- API Key 进 Keychain，不进明文 JSON
+- 用 `AGENT.md`、`.ma/skills/` 和工具循环承接项目工作流
 
 ## Benchmark
 
-MA 使用 LM Studio + 本地 Qwen3-30B 通过了 alpha 阶段 L0-L2 内部 benchmark：
+MA 用 benchmark 数据证明这个判断：LM Studio + 本地 Qwen3-30B 通过 alpha 阶段 L0-L2 发布门槛。
 
 | 模型 | 运行环境 | 任务数 | L0 | L1 | L2 |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Qwen3-30B local | LM Studio | 70 | 100% | 98.7% | 95.3% |
 
-这个 benchmark 覆盖连接稳定性、工具调用稳定性和多轮本地项目任务。它是 MA 本地 Agent 循环的发布门槛，不是通用 coding-agent 排行榜。
+这个 benchmark 是“本地小模型经过 Agent-loop 工程优化后能产生生产力”的证据。它覆盖连接稳定性、工具调用稳定性和多轮本地项目任务，不是通用 coding-agent 排行榜。
 
 详情见 [docs/benchmark-results.md](docs/benchmark-results.md)。
 

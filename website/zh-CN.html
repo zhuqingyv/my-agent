@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MA - 本地优先的多模型终端编程 Agent</title>
+    <title>MA - DeepSeek 无脑配置，本地 Qwen 变生产力</title>
     <meta
       name="description"
-      content="MA 是一个本地优先、多模型的终端编程 Agent，支持 LM Studio、DeepSeek、安全密钥存储、MCP 工具和键盘优先 TUI。"
+      content="MA 让 DeepSeek 配置无脑化，并通过长上下文、工具加固、模型切换和 benchmark 证据，把 LM Studio/Qwen 本地小模型变成真实编程生产力。"
     />
-    <meta property="og:title" content="MA - 终端编程 Agent" />
-    <meta property="og:description" content="面向真实仓库的本地优先多模型编程 Agent。" />
+    <meta property="og:title" content="MA - DeepSeek 无脑配置，本地 Qwen 变生产力" />
+    <meta property="og:description" content="少配置、少烧 token、小模型能干活：DeepSeek 初始化、本地模型深度优化、长 Agent 循环、benchmark 证据。" />
     <meta property="og:image" content="./assets/logo.png" />
     <link rel="icon" href="./assets/logo.png" type="image/png" />
     <link rel="stylesheet" href="./styles.css" />
@@ -33,11 +33,11 @@
       <section class="hero">
         <div class="hero-grid" aria-hidden="true"></div>
         <div class="hero-copy">
-          <p class="eyebrow">v0.1.0-alpha</p>
+          <p class="eyebrow">v0.1.0-alpha · DeepSeek 配置 + 本地 Qwen 生产力</p>
           <h1>MA</h1>
-          <p class="lede">本地优先、多模型的终端编程 Agent。</p>
+          <p class="lede">DeepSeek 无脑配置，本地小模型也能变生产力。</p>
           <p class="sublede">
-            在 LM Studio 和 DeepSeek 之间切换，让 API Key 离开明文配置，并在真实仓库里使用 MCP 工具完成工作。
+            用户真正想要的是少折腾配置、少烧 token、本地模型真的能干活。MA 交付的是：DeepSeek 交互式初始化、LM Studio/Qwen 深度优化、长上下文 Agent 循环、内置工具和 benchmark 证据。
           </p>
           <div class="hero-actions">
             <a class="button primary" href="https://github.com/zhuqingyv/my-agent/releases/tag/v0.1.0-alpha">下载 alpha</a>
@@ -49,58 +49,72 @@
         </div>
       </section>
 
-      <section class="terminal-band" aria-label="快速开始终端">
-        <div class="terminal">
-          <div class="terminal-bar"><span></span><span></span><span></span></div>
-          <pre><code>$ ma init
-? Model source
-  LM Studio local
-› DeepSeek official
-
-$ ma
-/model  用上下键切换 provider 和模型</code></pre>
+      <section class="proof-strip" aria-label="产品证据点">
+        <div>
+          <strong>95.3%</strong>
+          <span>证明本地 Qwen 生产力的 L2 通过率</span>
         </div>
+        <div>
+          <strong>DeepSeek</strong>
+          <span>交互式配置，不手写 JSON</span>
+        </div>
+        <div>
+          <strong>262K ctx</strong>
+          <span>上下文检测、占用显示、输出压缩</span>
+        </div>
+        <div>
+          <strong>小模型优化</strong>
+          <span>Qwen/LM Studio 修复进入发布门槛</span>
+        </div>
+      </section>
+
+      <section class="terminal-band" aria-label="快速开始终端">
+        <div class="section-heading compact-heading">
+          <p class="eyebrow">TUI 就是产品本体</p>
+          <h2>模型、工具、任务状态、上下文和快捷键都在 Agent 工作时可见。</h2>
+        </div>
+        <img class="tui-preview" src="./assets/tui-preview.svg" alt="MA 终端界面，显示本地 Qwen 模型、MCP 工具、任务进度和上下文占用" />
       </section>
 
       <section id="features" class="section">
         <div class="section-heading">
-          <p class="eyebrow">面向日常开发</p>
-          <h2>尊重真实项目的终端体验。</h2>
+          <p class="eyebrow">用户真正想要什么</p>
+          <h2>少折腾、少烧钱、本地智能真的可用。</h2>
         </div>
         <div class="feature-grid">
           <article>
-            <h3>默认多模型</h3>
-            <p>当前支持 LM Studio 本地模型和 DeepSeek。Provider/model profile 让同名模型也能清楚区分：<code>DeepSeek/deepseek-v4-pro</code>。</p>
+            <h3>“别让我配置两遍。”</h3>
+            <p><code>ma init</code> 给 DeepSeek 和 LM Studio 同一套交互路径：发现模型、保存凭据、创建 profile、开始工作。</p>
           </article>
           <article>
-            <h3>快速切换模型</h3>
-            <p><code>/model</code> 打开键盘选择器，聚合发现到的模型，并记住上一次选择的 profile。</p>
+            <h3>“别每轮都烧 token。”</h3>
+            <p>重复仓库任务默认跑本地 LM Studio/Qwen，需要远程能力时再一键切 DeepSeek。</p>
           </article>
           <article>
-            <h3>远程密钥更安全</h3>
-            <p>远程 API Key 存在 macOS Keychain。配置文件只保存引用，不保存明文密钥。</p>
+            <h3>“让我的小模型别那么笨。”</h3>
+            <p>采样参数透传、tool-call 自愈、多模态 payload 兼容、消息完整性测试，都针对 Qwen/LM Studio 做。</p>
           </article>
           <article>
-            <h3>内置 MCP 工具</h3>
-            <p><code>ma init</code> 后即可使用 shell、文件读写、结构化编辑、grep 和 web search。</p>
+            <h3>“让它能长时间工作。”</h3>
+            <p>自动检测 context window，显示上下文占用，压缩输出，面向长时间 Agent 循环，不是短对话 demo。</p>
           </article>
           <article>
-            <h3>斜杠指令</h3>
-            <p>输入 <code>/</code> 查看建议，用上下键选择，用 Tab 补全。</p>
+            <h3>“别把 API Key 泄进仓库。”</h3>
+            <p>远程 key 存 macOS Keychain，配置文件只保存引用，不保存明文密钥。</p>
           </article>
           <article>
-            <h3>项目指令和技能</h3>
-            <p>MA 读取 <code>AGENT.md</code> 和项目内 <code>.ma/skills/*.md</code>，把团队工作流沉淀到仓库里。</p>
+            <h3>“让我看见 Agent 在干嘛。”</h3>
+            <p>TUI 显示模型、endpoint、工具、任务进度、thinking 状态、会话控制和 context 预算。</p>
           </article>
         </div>
       </section>
 
       <section id="benchmark" class="section split">
         <div>
-          <p class="eyebrow">Alpha Benchmark</p>
-          <h2>本地 Qwen3-30B 通过 L0-L2 发布门槛。</h2>
+          <p class="eyebrow">Benchmark 就是证据</p>
+          <h2>我们不是说“支持本地模型”，我们说“本地小模型能产生生产力”。</h2>
           <p>
-            MA 的 alpha benchmark 覆盖连接稳定性、工具调用稳定性和多轮本地项目任务。它是产品发布门槛，不是通用排行榜。
+            这个 benchmark 证明 MA 的小模型工程优化是有效的：本地 Qwen3-30B、LM Studio、工具调用、多轮真实仓库任务、70 题 alpha gate。它不是通用榜单，是产品承诺的证据。
           </p>
           <a class="inline-link" href="https://github.com/zhuqingyv/my-agent/blob/main/docs/benchmark-results.md">查看 benchmark 细节</a>
         </div>
@@ -131,8 +145,8 @@ cd ma-*
             <h3>Windows</h3>
             <pre><code>Expand-Archive ma-*.zip
 cd ma-*
-.ma.cmd init
-.ma.cmd</code></pre>
+.\ma.cmd init
+.\ma.cmd</code></pre>
           </div>
         </div>
       </section>

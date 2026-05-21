@@ -2,34 +2,46 @@
 
 **English** | [中文](README.zh-CN.md)
 
-Local-first multi-model coding agent for your terminal.
+DeepSeek in minutes. Local small models turned into real productivity.
 
-MA is built for developers who switch between local models and remote APIs, work inside real repositories, and want a terminal agent that is pleasant to configure instead of painful to babysit.
+MA is a terminal coding agent built around two practical promises: remote setup should be brainless, and local small models should become useful production tools. DeepSeek config is interactive and direct. LM Studio/Qwen gets long-context handling, tool hardening, model switching, and benchmark-driven fixes so small models can do real repo work.
 
 `v0.1.0-alpha` supports LM Studio local models and DeepSeek official API today. More OpenAI-compatible providers are next.
 
 Website: https://zhuqingyv.github.io/my-agent/  
 Release: https://github.com/zhuqingyv/my-agent/releases/tag/v0.1.0-alpha
 
-## Why MA
+![MA terminal UI preview](website/assets/tui-preview.svg)
 
-- **Multi-model by default**: LM Studio local models plus DeepSeek profiles; switch with `/model`.
-- **Good setup UX**: `ma init` is interactive, discovers models, and writes a usable config.
-- **Secure remote keys**: DeepSeek API keys are stored in macOS Keychain; config stores only `secretRef`.
-- **Real project tools**: built-in MCP tools for shell, files, structured edits, grep, and web.
-- **Keyboard-first TUI**: slash command suggestions, Tab completion, sessions, revert, and model picker.
-- **Local instructions**: reads `AGENT.md` from your project and global config.
-- **Skills**: project-local `.ma/skills/*.md` commands with YAML frontmatter.
+## The Hook
+
+- **Local small models become productive**: MA's alpha gate runs 70 L0-L2 tasks through a local Qwen3-30B model via LM Studio.
+- **DeepSeek is the zero-friction fallback**: `ma init` discovers models, stores keys safely, and leaves you with a working profile instead of a config chore.
+- **Near-infinite working room**: MA auto-detects context windows, tracks usage, compresses output, and is designed for long local-agent loops.
+- **Small-model hardening is the product**: Qwen/LM Studio-specific sampling, image payload compatibility, tool-call recovery, and prompt/message integrity are treated as release gates.
+- **Agent tools are built in**: shell, file read/write, structured edits, grep, and web are available immediately after init.
+
+## Why MA Exists
+
+Most terminal AI tools assume the hosted model is the product. MA assumes the workflow is the product: configure DeepSeek without thinking, then make local Qwen useful enough to keep running real tasks without worrying about token cost.
+
+That means the product priorities are different:
+
+- DeepSeek setup that writes a usable profile in one pass
+- local model profiles instead of one global model string
+- benchmark gates for local small-model productivity instead of vibe-only demos
+- Keychain-backed secrets instead of plaintext API keys
+- repo-local instructions, skills, and tool loops tuned for small models
 
 ## Benchmark
 
-MA passes its alpha L0-L2 internal benchmark with a local Qwen3-30B model through LM Studio:
+MA uses benchmark data as product evidence: local Qwen3-30B through LM Studio passes the alpha L0-L2 release gate.
 
 | Model | Runtime | Tasks | L0 | L1 | L2 |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Qwen3-30B local | LM Studio | 70 | 100% | 98.7% | 95.3% |
 
-This benchmark covers connectivity, stable tool use, and multi-turn local project work. It is a release gate for MA's local-agent loop, not a universal coding-agent leaderboard.
+This benchmark is the proof point for the claim: local small models can become useful with enough agent-loop engineering. It covers connectivity, stable tool use, and multi-turn local project work. It is not a universal coding-agent leaderboard.
 
 See [docs/benchmark-results.md](docs/benchmark-results.md).
 
