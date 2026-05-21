@@ -11,6 +11,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import pico from 'picocolors';
 import type { DiffData } from '../state/types.js';
+import { buildDiffLines, type RenderDiffLine } from '../utils/diff-lines.js';
 
 interface DiffBlockProps {
   diff: DiffData;
@@ -50,9 +51,7 @@ export function DiffBlock({ diff }: DiffBlockProps) {
 
   // === 策略 2: 中等文件 → 摘要 + 前N/后N行 ===
   if (totalChanges > 50) {
-    const lines = diff.diffText.split('\n');
-    // 跳过 header（前4行）和 closing border（最后一行）
-    const contentLines = lines.slice(4, -1);
+    const contentLines = buildDiffLines(diff.diffText);
     const half = Math.floor(MAX_VISIBLE / 2);
     const head = contentLines.slice(0, half);
     const tail = contentLines.slice(-half);
@@ -70,17 +69,13 @@ export function DiffBlock({ diff }: DiffBlockProps) {
         </Box>
         <Box flexDirection="column">
           {head.map((line, i) => (
-            <Box key={`h-${i}`}>
-              <Text>{line}</Text>
-            </Box>
+            <DiffLine key={`h-${i}`} line={line} />
           ))}
           <Box>
             <Text dimColor>{COLLAPSE_MARKER} ({totalChanges - MAX_VISIBLE} lines collapsed) {COLLAPSE_MARKER}</Text>
           </Box>
           {tail.map((line, i) => (
-            <Box key={`t-${i}`}>
-              <Text>{line}</Text>
-            </Box>
+            <DiffLine key={`t-${i}`} line={line} />
           ))}
         </Box>
         <Box>
@@ -91,8 +86,7 @@ export function DiffBlock({ diff }: DiffBlockProps) {
   }
 
   // === 策略 3: 小文件 → 完整显示 ===
-  const lines = diff.diffText.split('\n');
-  const contentLines = lines.slice(4, -1);
+  const contentLines = buildDiffLines(diff.diffText);
 
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={1}>
@@ -107,9 +101,7 @@ export function DiffBlock({ diff }: DiffBlockProps) {
       </Box>
       <Box flexDirection="column">
         {contentLines.map((line, i) => (
-          <Box key={i}>
-            <Text>{line}</Text>
-          </Box>
+          <DiffLine key={i} line={line} />
         ))}
       </Box>
       <Box>
@@ -117,4 +109,50 @@ export function DiffBlock({ diff }: DiffBlockProps) {
       </Box>
     </Box>
   );
+}
+
+function DiffLine({ line }: { line: RenderDiffLine }) {
+  const oldLine = formatLineNo(line.oldLine);
+  const newLine = formatLineNo(line.newLine);
+
+  if (line.kind === 'file') {
+    return (
+      <Box>
+        <Text color="cyan" dimColor>{'     '}{line.content}</Text>
+      </Box>
+    );
+  }
+  if (line.kind === 'hunk') {
+    return (
+      <Box>
+        <Text color="yellow">{'     '}{line.content}</Text>
+      </Box>
+    );
+  }
+  if (line.kind === 'meta') {
+    return (
+      <Box>
+        <Text color="yellow" dimColor>{'     '}{line.content}</Text>
+      </Box>
+    );
+  }
+
+  const color = line.kind === 'add' ? 'green' : line.kind === 'del' ? 'red' : undefined;
+  const dim = line.kind === 'context';
+
+  return (
+    <Box>
+      <Text dimColor>{oldLine}</Text>
+      <Text dimColor>{' '}</Text>
+      <Text dimColor>{newLine}</Text>
+      <Text>{' '}</Text>
+      <Text color={color} dimColor={dim}>{line.sign}</Text>
+      <Text>{' '}</Text>
+      <Text color={color} dimColor={dim}>{line.content}</Text>
+    </Box>
+  );
+}
+
+function formatLineNo(value: number | undefined): string {
+  return value === undefined ? '   ' : String(value).padStart(3, ' ');
 }

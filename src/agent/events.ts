@@ -1,10 +1,31 @@
+export interface DiffArtifact {
+  type: 'diff';
+  filePath: string;
+  addedLines: number;
+  removedLines: number;
+  diffText: string;
+  truncated: boolean;
+}
+
+export interface WorkspaceDiffFile extends DiffArtifact {
+  status: 'added' | 'modified' | 'deleted';
+}
+
+export interface WorkspaceDiffArtifact {
+  type: 'workspace-diff';
+  files: WorkspaceDiffFile[];
+  summary: string;
+  truncated: boolean;
+}
+
 export type AgentEvent =
   | { type: 'task:start'; taskId: string; prompt: string }
   | { type: 'task:done'; taskId: string; next?: string }
   | { type: 'task:failed'; taskId: string; error: string }
   | { type: 'task:aborted'; taskId: string }
   | { type: 'tool:call'; name: string; args: Record<string, any> }
-  | { type: 'tool:result'; ok: boolean; content: string }
+  | { type: 'tool:result'; ok: boolean; content: string; artifact?: DiffArtifact }
+  | { type: 'workspace:diff'; artifact: WorkspaceDiffArtifact }
   | { type: 'token'; text: string }
   | { type: 'text'; content: string }
   | { type: 'thinking:start' }

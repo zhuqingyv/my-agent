@@ -1,3 +1,5 @@
+import type { WorkspaceDiffFile } from '../../agent/events.js';
+
 export interface UiImage {
   path: string;
   size: number;
@@ -13,6 +15,7 @@ export type Message =
   | { kind: 'user'; id: string; text: string; images?: UiImage[] }
   | { kind: 'assistant'; id: string; markdown: string; elapsedMs: number }
   | { kind: 'tool'; id: string; name: string; ok: boolean; preview: string; diff?: DiffData }
+  | { kind: 'workspace-diff'; id: string; files: WorkspaceDiffFile[]; summary: string; truncated: boolean }
   | { kind: 'system'; id: string; text: string }
   | { kind: 'separator'; id: string; elapsed: string }
   | { kind: 'banner'; id: string; data: BannerData };

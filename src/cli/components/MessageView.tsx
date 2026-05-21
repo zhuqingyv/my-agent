@@ -5,6 +5,7 @@ import { ToolProgress } from './ToolProgress.js';
 import { Separator } from './Separator.js';
 import { Markdown } from './Markdown.js';
 import { Banner } from './Banner.js';
+import { WorkspaceDiffView } from './WorkspaceDiffView.js';
 
 interface MessageViewProps {
   message: Message;
@@ -40,5 +41,7 @@ export function MessageView({ message }: MessageViewProps) {
       return <Separator elapsed={message.elapsed} />;
     case 'banner':
       return <Banner model={message.data.model} baseURL={message.data.baseURL} mcp={message.data.mcp} />;
+    case 'workspace-diff':
+      return <WorkspaceDiffView files={message.files} truncated={message.truncated} />;
   }
 }

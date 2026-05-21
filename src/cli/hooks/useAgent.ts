@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import type { Agent, ChatContent } from '../../mcp/types.js';
 import type { AgentEvent } from '../../agent/events.js';
 import type { UiStore } from '../state/store.js';
+import { makeToolResultPreview, parseToolResultDiff } from '../diff-parser.js';
 
 export interface PendingConfirm {
   requestId: string;
@@ -18,7 +19,7 @@ function nextId() {
   return `m_${++msgCounter}`;
 }
 
-function applyEvent(
+export function applyAgentEvent(
   store: UiStore,
   event: AgentEvent,
   opts: UseAgentOptions
@@ -54,46 +55,50 @@ function applyEvent(
       if (pending.trim()) {
         store.pushMessage({ kind: 'assistant', id: nextId(), markdown: pending, elapsedMs: 0 });
       }
-      const preview = event.content
-        .replace(/<[^>]*>/g, '')
-        .trim()
-        .split('\n')[0]
-        .slice(0, 50);
-      
-      // 解析 diff 信息
-      let diffData: import('../state/types.js').DiffData | undefined;
-      if (event.ok) {
-        const diffMatch = event.content.match(/--- Diff ---\s*\n([\s\S]*)$/);
-        if (diffMatch) {
-          const diffText = diffMatch[1];
-          // 解析文件路径
-          const fileMatch = event.content.match(/(?:已编辑|已覆盖|已写入)\s+(.+?)[（\(]/);
-          const filePath = fileMatch ? fileMatch[1].trim() : '';
-          // 解析统计信息
-          const addedMatch = diffText.match(/\+(\d+)/);
-          const removedMatch = diffText.match(/-(\d+)/);
-          const addedLines = addedMatch ? parseInt(addedMatch[1], 10) : 0;
-          const removedLines = removedMatch ? parseInt(removedMatch[1], 10) : 0;
-          
-          diffData = {
-            filePath,
-            addedLines,
-            removedLines,
-            diffText,
-            truncated: diffText.includes('collapsed') || diffText.includes('truncated'),
-          };
-        }
+      const toolName = store.getState().thinking?.toolName || '';
+      if (event.ok && toolName === 'enter_plan_mode') {
+        store.updateThinking({ event: '等待方案确认' });
+        break;
       }
+      const preview = makeToolResultPreview(event.content);
+      const diffData = event.ok
+        ? event.artifact ?? parseToolResultDiff(event.content)
+        : undefined;
       
       store.pushMessage({
         kind: 'tool',
         id: nextId(),
-        name: store.getState().thinking?.toolName || '',
+        name: toolName,
         ok: event.ok,
         preview: preview || (event.ok ? '完成' : '失败'),
         diff: diffData,
       });
       store.updateThinking({ event: event.ok ? '分析结果中' : '处理错误中' });
+      break;
+    }
+    case 'workspace:diff':
+      store.pushMessage({
+        kind: 'workspace-diff',
+        id: nextId(),
+        files: event.artifact.files,
+        summary: event.artifact.summary,
+        truncated: event.artifact.truncated,
+      });
+      break;
+    case 'plan': {
+      const pending = store.flushInFlight();
+      if (pending.trim()) {
+        store.pushMessage({ kind: 'assistant', id: nextId(), markdown: pending, elapsedMs: 0 });
+      }
+      if (event.content.trim()) {
+        store.pushMessage({
+          kind: 'assistant',
+          id: nextId(),
+          markdown: event.content,
+          elapsedMs: 0,
+        });
+      }
+      store.updateThinking({ event: '等待方案确认' });
       break;
     }
     case 'token':
@@ -177,7 +182,7 @@ export function useAgent(
 
       try {
         for await (const event of agent.chat(content, abortRef.current.signal)) {
-          applyEvent(store, event, optsRef.current);
+          applyAgentEvent(store, event, optsRef.current);
           if (abortRef.current.signal.aborted) break;
         }
       } catch (err: any) {

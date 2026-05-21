@@ -35,13 +35,42 @@ export interface McpConnection {
 }
 
 export interface ModelConfig {
+  provider?: string;
   baseURL: string;
   model: string;
   apiKey: string;
+  secretRef?: string;
   temperature?: number;
+  topP?: number;
+  topK?: number;
+  minP?: number;
+  presencePenalty?: number;
   frequencyPenalty?: number;
+  repeatPenalty?: number;
   contextWindow?: number;
   maxTokens?: number;
+  maxOutputChars?: number;
+  repeatWindowChars?: number;
+  repeatWindowRepeats?: number;
+  extraParams?: Record<string, unknown>;
+}
+
+export interface CredentialConfig {
+  provider: string;
+  baseURL: string;
+  secretRef?: string;
+  apiKeyMode?: 'none' | 'secret';
+  authPolicy?: 'session' | 'always';
+  modelsCache?: {
+    fetchedAt?: string;
+    models: string[];
+  };
+}
+
+export interface ProfileConfig {
+  credentialId: string;
+  model: string;
+  label?: string;
 }
 
 export interface DangerConfig {
@@ -52,6 +81,9 @@ export interface DangerConfig {
 export interface AgentConfig {
   model: ModelConfig;
   mcpServers: Record<string, McpServerConfig>;
+  defaultProfile?: string;
+  credentials?: Record<string, CredentialConfig>;
+  profiles?: Record<string, ProfileConfig>;
   systemPrompt?: string;
   maxLoops?: number;
   danger?: DangerConfig;
@@ -79,6 +111,7 @@ export interface Agent {
   getTaskStack(): TaskStack;
   getArchive(taskId: string): ArchivedMessage[] | null;
   abortAll(): number;
+  revertLastTurnContextOnly(): number;
   respondConfirm(requestId: string, approved: boolean): void;
   getContextUsage(): { used: number; total: number };
 }

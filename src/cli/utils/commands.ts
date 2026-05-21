@@ -1,4 +1,10 @@
 import type { Agent, AgentConfig, McpConnection } from '../../mcp/types.js';
+import * as path from 'node:path';
+import { loadSkillsFromDirectory, createSkillCommand } from '../../skills/loadSkills.js';
+import {
+  listModelChoices,
+  type ModelChoice,
+} from './modelProfiles.js';
 
 interface CommandContext {
   agent: Agent;
@@ -6,14 +12,38 @@ interface CommandContext {
   config: AgentConfig;
   exit: () => void;
   setModel?: (model: string) => void;
+  openModelPicker?: () => Promise<void> | void;
+  switchModelChoice?: (choice: ModelChoice) => void;
+  revertLastTurn?: () => boolean;
 }
 
-interface Command {
+export interface Command {
   description: string;
+  suggest?: boolean;
   handler: (args: string, ctx: CommandContext) => Promise<string | null> | string | null;
 }
 
 const commands = new Map<string, Command>();
+let skillsLoaded = false;
+
+// Load skills from .ma/skills directory
+async function loadSkills() {
+  if (skillsLoaded) return;
+
+  const skillsDir = path.join(process.cwd(), '.ma', 'skills');
+  try {
+    const skills = await loadSkillsFromDirectory(skillsDir);
+    for (const skill of skills) {
+      const command = createSkillCommand(skill);
+      const name = `/${skill.name}`;
+      if (commands.has(name)) continue;
+      commands.set(name, command);
+    }
+    skillsLoaded = true;
+  } catch (err) {
+    console.warn(`Failed to load skills: ${err}`);
+  }
+}
 
 commands.set('/quit', {
   description: 'Exit',
@@ -22,6 +52,7 @@ commands.set('/quit', {
 
 commands.set('/exit', {
   description: 'Exit',
+  suggest: true,
   handler: (_, ctx) => { ctx.exit(); return null; },
 });
 
@@ -68,17 +99,45 @@ commands.set('/archive', {
 
 commands.set('/clear', {
   description: 'Clear conversation',
+  suggest: true,
   handler: (_, ctx) => { ctx.agent.reset(); return '[cleared]'; },
+});
+
+commands.set('/help', {
+  description: 'Show commands',
+  suggest: true,
+  handler: async () => {
+    return Array.from(await getSuggestedCommands())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, command]) => `${name}  ${command.description}`)
+      .join('\n');
+  },
+});
+
+commands.set('/revert', {
+  description: 'Revert last visible conversation turn',
+  handler: (_, ctx) => {
+    const reverted = ctx.revertLastTurn?.() ?? false;
+    return reverted ? '[已回退上一轮对话，文件未回退]' : '[没有可回退的对话]';
+  },
+});
+
+commands.set('/undo', {
+  description: 'Alias for /revert',
+  handler: (_, ctx) => {
+    const reverted = ctx.revertLastTurn?.() ?? false;
+    return reverted ? '[已回退上一轮对话，文件未回退]' : '[没有可回退的对话]';
+  },
 });
 
 commands.set('/models', {
   description: 'List available models',
   handler: async (_, ctx) => {
     try {
-      const res = await fetch(`${ctx.config.model.baseURL}/models`);
-      const data = await res.json() as { data: Array<{ id: string }> };
-      const current = ctx.config.model.model;
-      return data.data.map(m => m.id === current ? `* ${m.id} (current)` : `  ${m.id}`).join('\n');
+      const choices = await listModelChoices(ctx.config);
+      return choices
+        .map((m) => `${m.current ? '*' : ' '} ${m.id}${m.source === 'cache' ? ' (cache)' : ''}`)
+        .join('\n');
     } catch (err) {
       return `Failed to fetch models: ${(err as Error).message}`;
     }
@@ -86,21 +145,59 @@ commands.set('/models', {
 });
 
 commands.set('/model', {
-  description: 'Switch model',
+  description: 'Open model switcher or use /model list|use <profile>',
+  suggest: true,
   handler: async (args, ctx) => {
-    const name = args.trim();
-    if (!name) return `Current model: ${ctx.config.model.model}\nUsage: /model <name>`;
-    try {
-      const res = await fetch(`${ctx.config.model.baseURL}/models`);
-      const data = await res.json() as { data: Array<{ id: string }> };
-      const found = data.data.find(m => m.id === name);
-      if (!found) return `Model "${name}" not found. Use /models to list available.`;
-      ctx.config.model.model = name;
-      ctx.setModel?.(name);
-      return `Switched to: ${name}`;
-    } catch (err) {
-      return `Failed: ${(err as Error).message}`;
+    const trimmed = args.trim();
+    if (!trimmed) {
+      await ctx.openModelPicker?.();
+      return ctx.openModelPicker
+        ? null
+        : `Current model: ${ctx.config.model.model}\nUsage: /model list | /model use <profile>`;
     }
+
+    if (trimmed === 'list') {
+      try {
+        const choices = await listModelChoices(ctx.config);
+        return choices
+          .map((m) => `${m.current ? '*' : ' '} ${m.id}${m.source === 'cache' ? ' (cache)' : ''}`)
+          .join('\n');
+      } catch (err) {
+        return `Failed to fetch models: ${(err as Error).message}`;
+      }
+    }
+
+    const useMatch = trimmed.match(/^use\s+(.+)$/);
+    if (useMatch) {
+      const id = useMatch[1].trim();
+      const choices = await listModelChoices(ctx.config);
+      const choice = choices.find((m) => m.id === id || m.label === id || m.model === id);
+      if (!choice) return `Model profile not found: ${id}\nUse /model list to see available models.`;
+      ctx.switchModelChoice?.(choice);
+      return ctx.switchModelChoice
+        ? null
+        : `Selected model profile: ${choice.id}`;
+    }
+
+    return `Usage: /model | /model list | /model use <profile>`;
+  },
+});
+
+commands.set('/skills', {
+  description: 'List all available skills',
+  handler: async (_, ctx) => {
+    await loadSkills();
+    const skillCommands = Array.from(commands.entries())
+      .filter(([name, cmd]) => name.startsWith('/') && !['/quit', '/exit', '/tools', '/stack', '/abort', '/archive', '/clear', '/help', '/revert', '/undo', '/models', '/model', '/skills'].includes(name));
+
+    if (skillCommands.length === 0) {
+      return 'No custom skills found. Create skills in .ma/skills/ directory.';
+    }
+
+    return 'Available skills:\n' +
+      skillCommands
+        .map(([name, cmd]) => `  ${name} - ${cmd.description}`)
+        .join('\n');
   },
 });
 
@@ -109,6 +206,9 @@ export function isCommand(input: string): boolean {
 }
 
 export async function executeCommand(input: string, ctx: CommandContext): Promise<string | null> {
+  // Load skills on first command execution
+  await loadSkills();
+
   const spaceIdx = input.indexOf(' ');
   const name = spaceIdx > 0 ? input.slice(0, spaceIdx) : input;
   const args = spaceIdx > 0 ? input.slice(spaceIdx + 1) : '';
@@ -118,3 +218,16 @@ export async function executeCommand(input: string, ctx: CommandContext): Promis
 }
 
 export { commands };
+
+// Export function to get all available commands (including skills)
+export async function getAllCommands(): Promise<Map<string, Command>> {
+  await loadSkills();
+  return new Map(commands);
+}
+
+export async function getSuggestedCommands(): Promise<Map<string, Command>> {
+  await loadSkills();
+  return new Map(
+    Array.from(commands.entries()).filter(([, command]) => command.suggest)
+  );
+}

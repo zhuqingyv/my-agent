@@ -3,6 +3,34 @@ import type {
 } from 'openai/resources/chat/completions';
 import type { AgentEvent } from './events.js';
 import { normalizeToolCalls } from './normalize.js';
+import type { ParsedAssistantTurn } from '../provider/types.js';
+
+export interface StreamParserOptions {
+  maxContentChars?: number;
+  repeatWindowChars?: number;
+  repeatWindowRepeats?: number;
+}
+
+function hasRepeatedSuffix(
+  text: string,
+  windowChars: number,
+  repeats: number
+): boolean {
+  if (windowChars <= 0 || repeats <= 1) return false;
+  const needed = windowChars * repeats;
+  if (text.length < needed) return false;
+
+  const end = text.length;
+  const last = text.slice(end - windowChars, end);
+  if (last.trim().length < Math.floor(windowChars * 0.6)) return false;
+
+  for (let i = 2; i <= repeats; i++) {
+    const start = end - windowChars * i;
+    const prev = text.slice(start, start + windowChars);
+    if (prev !== last) return false;
+  }
+  return true;
+}
 
 /**
  * Parses an OpenAI-compatible streaming response.
@@ -11,14 +39,17 @@ import { normalizeToolCalls } from './normalize.js';
  * aggregated content + tool calls when the stream ends.
  */
 export class StreamParser {
+  constructor(private readonly options: StreamParserOptions = {}) {}
+
   async *parse(
     stream: AsyncIterable<any>
   ): AsyncGenerator<
     AgentEvent,
-    { content: string; toolCalls: ChatCompletionMessageToolCall[] | null },
+    ParsedAssistantTurn,
     unknown
   > {
     let contentBuf = '';
+    let reasoningBuf = '';
     const toolAcc = new Map<
       number,
       { id: string; name: string; argsBuf: string }
@@ -36,6 +67,7 @@ export class StreamParser {
         typeof (delta as any).reasoning_content === 'string' &&
         (delta as any).reasoning_content.length > 0
       ) {
+        reasoningBuf += (delta as any).reasoning_content;
         if (!isThinking) {
           isThinking = true;
           thinkingViaReasoning = true;
@@ -86,6 +118,29 @@ export class StreamParser {
         // Emit non-empty content
         if (text.length > 0) {
           contentBuf += text;
+          const maxContentChars = this.options.maxContentChars;
+          if (
+            typeof maxContentChars === 'number' &&
+            maxContentChars > 0 &&
+            contentBuf.length > maxContentChars
+          ) {
+            throw new Error(
+              `model output exceeded maxOutputChars (${maxContentChars}); aborted likely runaway generation`
+            );
+          }
+          const repeatWindowChars = this.options.repeatWindowChars ?? 0;
+          const repeatWindowRepeats = this.options.repeatWindowRepeats ?? 0;
+          if (
+            hasRepeatedSuffix(
+              contentBuf,
+              repeatWindowChars,
+              repeatWindowRepeats
+            )
+          ) {
+            throw new Error(
+              `model output repeated the last ${repeatWindowChars} characters ${repeatWindowRepeats} times; aborted likely runaway generation`
+            );
+          }
           yield { type: 'token', text };
         }
       }
@@ -122,6 +177,10 @@ export class StreamParser {
         function: { name: v.name, arguments: v.argsBuf },
       }));
     const toolCalls = normalizeToolCalls(assembled);
-    return { content: contentBuf, toolCalls };
+    return {
+      content: contentBuf,
+      toolCalls,
+      reasoningContent: reasoningBuf || undefined,
+    };
   }
 }

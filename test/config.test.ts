@@ -142,3 +142,40 @@ test('loadConfigDetailed: defaults applied when no model in any source', () => {
     assert.equal(config.model.apiKey, 'lm-studio');
   });
 });
+
+test('loadConfigDetailed: defaultProfile resolves model through env secretRef without writing apiKey in config', () => {
+  const home = mktmp('my-agent-home-');
+  const proj = mktmp('my-agent-proj-');
+  fs.mkdirSync(path.join(home, '.my-agent'), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, '.my-agent', 'config.json'),
+    JSON.stringify({
+      defaultProfile: 'DeepSeek-work/deepseek-v4-pro',
+      credentials: {
+        'DeepSeek-work': {
+          provider: 'deepseek',
+          baseURL: 'https://api.deepseek.com',
+          secretRef: 'env:MA_TEST_DEEPSEEK_KEY',
+          apiKeyMode: 'secret',
+        },
+      },
+      profiles: {
+        'DeepSeek-work/deepseek-v4-pro': {
+          credentialId: 'DeepSeek-work',
+          model: 'deepseek-v4-pro',
+        },
+      },
+    })
+  );
+  withEnv({ HOME: home, MA_TEST_DEEPSEEK_KEY: 'sk-env-secret' }, () => {
+    process.chdir(proj);
+    const raw = JSON.parse(fs.readFileSync(path.join(home, '.my-agent', 'config.json'), 'utf-8'));
+    assert.equal(raw.model, undefined);
+    const { config } = loadConfigDetailed();
+    assert.equal(config.model.provider, 'deepseek');
+    assert.equal(config.model.baseURL, 'https://api.deepseek.com');
+    assert.equal(config.model.model, 'deepseek-v4-pro');
+    assert.equal(config.model.apiKey, 'sk-env-secret');
+    assert.equal(config.model.secretRef, 'env:MA_TEST_DEEPSEEK_KEY');
+  });
+});

@@ -7,6 +7,7 @@ import { compactToolResult } from './compact.js';
 import { classifyCommand, isWhitelisted } from './dangerGuard.js';
 import { routeToolCall, findToolSchema } from './tool-router.js';
 import { createTodoList } from './todo.js';
+import { parseToolResultDiff } from './diff-artifact.js';
 
 const DANGER_EXEC_TOOLS = new Set<string>([
   'exec-mcp__execute_command',
@@ -15,6 +16,8 @@ const DANGER_EXEC_TOOLS = new Set<string>([
 
 const ASK_USER_PREFIX = '[ask_user] ';
 const PLAN_OPEN = '[plan]\n';
+const WEB_SEARCH_LIMIT_PER_TASK = 2;
+const WEB_FETCH_LIMIT_PER_TASK = 3;
 
 function extractCommand(args: Record<string, any>): string {
   if (!args) return '';
@@ -53,6 +56,11 @@ export interface ConfirmProvider {
 }
 
 export class ToolExecutor {
+  private webSearchCount = 0;
+  private webFetchCount = 0;
+  private seenWebSearchQueries = new Set<string>();
+  private seenWebFetchUrls = new Set<string>();
+
   constructor(
     private config: AgentConfig,
     private connections: McpConnection[],
@@ -97,7 +105,14 @@ export class ToolExecutor {
     let isError = false;
     let skipExecute = false;
 
-    if (DANGER_EXEC_TOOLS.has(fullName)) {
+    const webPolicyBlock = this.reserveWebCall(fullName, args);
+    if (webPolicyBlock) {
+      toolResult = webPolicyBlock;
+      isError = true;
+      skipExecute = true;
+    }
+
+    if (!skipExecute && DANGER_EXEC_TOOLS.has(fullName)) {
       const cmd = extractCommand(args);
       const mode = this.config.danger?.mode ?? 'confirm';
       if (cmd && mode !== 'off') {
@@ -169,13 +184,87 @@ export class ToolExecutor {
       }
     }
 
-    const short =
-      toolResult.length > 400
-        ? toolResult.slice(0, 400) + '...'
-        : toolResult;
-    yield { type: 'tool:result', ok: !isError, content: short };
+    const short = formatToolResultForUi(toolResult);
+    const artifact = !isError ? parseToolResultDiff(short) : undefined;
+    yield { type: 'tool:result', ok: !isError, content: short, artifact };
     const compacted = compactToolResult(toolResult);
 
     return { result: compacted, isError };
   }
+
+  private reserveWebCall(fullName: string, args: Record<string, any>): string | null {
+    if (isWebSearchTool(fullName)) {
+      const query = normalizeWebKey(args.query);
+      if (!query) return null;
+      if (this.seenWebSearchQueries.has(query)) {
+        return JSON.stringify({
+          tool: 'web_search',
+          status: 'error',
+          error: { kind: 'duplicate_query', message: 'This search query was already used in this task.' },
+          suggested_next_action: 'Do not repeat the same query. Use one of the previous results, refine the query, or switch to local tools such as grep, npm, gh, or package manager commands.',
+        }, null, 2);
+      }
+      if (this.webSearchCount >= WEB_SEARCH_LIMIT_PER_TASK) {
+        return JSON.stringify({
+          tool: 'web_search',
+          status: 'error',
+          error: { kind: 'budget_exceeded', message: `web_search limit reached (${WEB_SEARCH_LIMIT_PER_TASK} per task).` },
+          suggested_next_action: 'Stop searching the web for this task. Use fetched sources already available or fall back to local tools.',
+        }, null, 2);
+      }
+      this.seenWebSearchQueries.add(query);
+      this.webSearchCount++;
+      return null;
+    }
+
+    if (isWebFetchTool(fullName)) {
+      const url = normalizeWebKey(args.url);
+      if (!url) return null;
+      if (this.seenWebFetchUrls.has(url)) {
+        return JSON.stringify({
+          tool: 'web_fetch',
+          status: 'error',
+          url: args.url,
+          error: { kind: 'duplicate_url', message: 'This URL was already fetched or attempted in this task.' },
+          suggested_next_action: 'Do not fetch the same URL again. Use the previous content, choose another source, or switch to local tools.',
+        }, null, 2);
+      }
+      if (this.webFetchCount >= WEB_FETCH_LIMIT_PER_TASK) {
+        return JSON.stringify({
+          tool: 'web_fetch',
+          status: 'error',
+          error: { kind: 'budget_exceeded', message: `web_fetch limit reached (${WEB_FETCH_LIMIT_PER_TASK} per task).` },
+          suggested_next_action: 'Stop fetching more pages. Answer from available sources or use local tools.',
+        }, null, 2);
+      }
+      this.seenWebFetchUrls.add(url);
+      this.webFetchCount++;
+      return null;
+    }
+
+    return null;
+  }
+}
+
+function normalizeWebKey(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase().replace(/\s+/g, ' ') : '';
+}
+
+function isWebSearchTool(fullName: string): boolean {
+  return fullName === 'web_search' || fullName.endsWith('__web_search');
+}
+
+function isWebFetchTool(fullName: string): boolean {
+  return fullName === 'web_fetch' || fullName.endsWith('__web_fetch');
+}
+
+export function formatToolResultForUi(toolResult: string): string {
+  if (toolResult.includes('--- Diff ---')) {
+    return toolResult.length > 12000
+      ? toolResult.slice(0, 12000) + '\n...'
+      : toolResult;
+  }
+  return toolResult.length > 400
+    ? toolResult.slice(0, 400) + '...'
+    : toolResult;
 }

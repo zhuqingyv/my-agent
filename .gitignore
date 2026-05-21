@@ -1,5 +1,7 @@
 node_modules/
 dist/
+release/
+.ma/
 .DS_Store
 *.tgz
 test/visual/screenshots/

@@ -18,7 +18,7 @@ export function StatusBar({ model, taskCount, debug, contextUsed, contextTotal }
     if (color) {
       return (
         <Text dimColor>
-          {'  '}Ctrl+V 图片 · ESC 中断 · /quit 退出
+          {'  '}Ctrl+V 图片 · ESC 中断 · 双击 ESC 切会话 · /quit 退出
           {taskCount ? ` · tasks: ${taskCount}` : ''}
           <Text color={color}>{ctxLabel}</Text>
           {debug ? ' · 🔧 debug' : ''}
@@ -29,7 +29,7 @@ export function StatusBar({ model, taskCount, debug, contextUsed, contextTotal }
 
   return (
     <Text dimColor>
-      {'  '}Ctrl+V 图片 · ESC 中断 · /quit 退出
+      {'  '}Ctrl+V 图片 · ESC 中断 · 双击 ESC 切会话 · /quit 退出
       {taskCount ? ` · tasks: ${taskCount}` : ''}
       {ctxLabel}
       {debug ? ' · 🔧 debug' : ''}

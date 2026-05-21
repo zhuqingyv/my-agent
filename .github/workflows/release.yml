@@ -1,0 +1,79 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  portable:
+    name: portable ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04, windows-2025]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm prune --omit=dev
+      - run: node scripts/package-portable.mjs --out release
+
+      - name: Archive bundle
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          bundle="$(ls -d ma-*)"
+          tar -czf "$bundle.tar.gz" "$bundle"
+          shasum -a 256 "$bundle.tar.gz" > "$bundle.tar.gz.sha256"
+
+      - name: Archive bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd release
+          $bundle = Get-ChildItem -Directory -Filter "ma-*" | Select-Object -First 1
+          Compress-Archive -Path $bundle.Name -DestinationPath "$($bundle.Name).zip"
+          Get-FileHash "$($bundle.Name).zip" -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $($bundle.Name).zip" } | Set-Content "$($bundle.Name).zip.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ma-${{ matrix.os }}
+          path: |
+            release/*.tar.gz
+            release/*.zip
+            release/*.sha256
+
+  publish:
+    name: publish github release
+    needs: portable
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.zip
+            artifacts/*.sha256
+          generate_release_notes: true

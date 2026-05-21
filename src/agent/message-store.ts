@@ -15,6 +15,7 @@ import type { ChatContent } from '../mcp/types.js';
 export class MessageStore {
   private messages: ChatCompletionMessageParam[] = [];
   private persistedCount = 0;
+  private rootTurnAnchors: number[] = [];
 
   init(
     systemPrompt: string,
@@ -22,6 +23,7 @@ export class MessageStore {
   ): void {
     this.messages = [{ role: 'system', content: systemPrompt }];
     this.persistedCount = 1;
+    this.rootTurnAnchors = [];
     if (resumeMessages) {
       for (const m of resumeMessages) {
         if (m.role === 'system') continue;
@@ -33,6 +35,7 @@ export class MessageStore {
   reset(systemPrompt: string): void {
     this.messages = [{ role: 'system', content: systemPrompt }];
     this.persistedCount = 1;
+    this.rootTurnAnchors = [];
   }
 
   get length(): number {
@@ -55,19 +58,26 @@ export class MessageStore {
   }
 
   /** Append a user message. */
-  appendUser(content: ChatContent): void {
+  appendUser(content: ChatContent, opts: { rootTurn?: boolean } = {}): void {
+    if (opts.rootTurn) {
+      this.rootTurnAnchors.push(this.messages.length);
+    }
     this.messages.push({ role: 'user', content: content as any });
   }
 
   /** Append an assistant message, optionally with tool_calls. */
   appendAssistant(
     content: string,
-    toolCalls?: ChatCompletionMessageToolCall[]
+    toolCalls?: ChatCompletionMessageToolCall[],
+    opts: { reasoningContent?: string } = {}
   ): void {
     const msg: ChatCompletionMessageParam = {
       role: 'assistant',
       content: content.trim() || '',
     };
+    if (opts.reasoningContent) {
+      (msg as any).reasoning_content = opts.reasoningContent;
+    }
     if (toolCalls && toolCalls.length > 0) {
       (msg as any).tool_calls = toolCalls;
     }
@@ -110,6 +120,34 @@ export class MessageStore {
     this.messages.pop();
   }
 
+  /** Drop the latest user turn and everything after it from in-memory context. */
+  revertLastTurn(): number {
+    for (let i = this.messages.length - 1; i >= 1; i--) {
+      if (this.messages[i].role === 'user') {
+        return this.truncateFrom(i);
+      }
+    }
+    return 0;
+  }
+
+  /** Drop the latest root user turn and everything after it. */
+  revertLastRootTurn(): number {
+    const anchor = this.rootTurnAnchors.pop();
+    return anchor === undefined ? 0 : this.truncateFrom(anchor);
+  }
+
+  /** Truncate context from a known message anchor. */
+  truncateFrom(anchor: number): number {
+    if (anchor < 1 || anchor >= this.messages.length) return 0;
+    const removed = this.messages.length - anchor;
+    this.messages.splice(anchor);
+    if (this.persistedCount > this.messages.length) {
+      this.persistedCount = this.messages.length;
+    }
+    this.rootTurnAnchors = this.rootTurnAnchors.filter((idx) => idx < anchor);
+    return removed;
+  }
+
   /** Find a safe cut index that does not land inside a tool-result block. */
   findSafeCutIndex(desiredCut: number): number {
     let cut = Math.max(1, Math.min(desiredCut, this.messages.length));
@@ -126,6 +164,10 @@ export class MessageStore {
       role: 'system',
       content: `[compact summary]\n${summary}`,
     });
+    const shift = cutIndex - 2;
+    this.rootTurnAnchors = this.rootTurnAnchors
+      .filter((idx) => idx >= cutIndex)
+      .map((idx) => idx - shift);
 
     // Safety: ensure at least one user message remains after compact.
     // Without this, Qwen3 jinja templates throw "No user query found in messages".
@@ -147,6 +189,7 @@ export class MessageStore {
   ): ChatCompletionMessageParam[] | null {
     if (anchor < 0 || anchor > this.messages.length) return null;
     const folded = this.messages.splice(anchor);
+    this.rootTurnAnchors = this.rootTurnAnchors.filter((idx) => idx < anchor);
     const userMsg = folded.find((m) => m.role === 'user');
     const userQ =
       userMsg && typeof userMsg.content === 'string'
@@ -162,7 +205,11 @@ export class MessageStore {
   /** Truncate messages for 500-error recovery. */
   truncateForRecovery(firstUserIdx: number, tailStart: number): void {
     const newMessages: ChatCompletionMessageParam[] = [this.messages[0]];
-    if (firstUserIdx > 1) {
+    const truncatedMiddle =
+      firstUserIdx > 0
+        ? tailStart > firstUserIdx + 1
+        : tailStart > 1;
+    if (truncatedMiddle) {
       newMessages.push({
         role: 'system',
         content: '[context truncated due to server error]',
@@ -175,6 +222,7 @@ export class MessageStore {
       newMessages.push(this.messages[i]);
     }
     this.messages = newMessages;
+    this.rootTurnAnchors = [];
   }
 
   /**

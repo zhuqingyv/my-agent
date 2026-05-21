@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { setMaxListeners } from 'node:events';
+import * as fs from 'node:fs';
 import type {
   McpConnection,
   McpServerConfig,
@@ -31,6 +32,19 @@ interface JsonRpcResponse {
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const PROTOCOL_VERSION = '2024-11-05';
+
+export function buildMcpEnv(extraEnv: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
+  const extraCerts = env.NODE_EXTRA_CA_CERTS;
+  if (extraCerts) {
+    try {
+      fs.accessSync(extraCerts, fs.constants.R_OK);
+    } catch {
+      delete env.NODE_EXTRA_CA_CERTS;
+    }
+  }
+  return env;
+}
 
 interface Pending {
   resolve: (value: any) => void;
@@ -270,7 +284,7 @@ export async function connectMcpServer(
 ): Promise<McpConnection> {
   const child = spawn(config.command, config.args ?? [], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, ...(config.env ?? {}) },
+    env: buildMcpEnv(config.env),
     cwd: config.cwd,
   });
 

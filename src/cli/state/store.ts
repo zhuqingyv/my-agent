@@ -101,6 +101,25 @@ export function createUiStore() {
       state = { ...state, messages: [], inFlightText: '' };
       notify();
     },
+
+    revertLastTurn(): boolean {
+      flushTokenBuffer();
+      let idx = -1;
+      for (let i = state.messages.length - 1; i >= 0; i--) {
+        if (state.messages[i].kind === 'user') {
+          idx = i;
+          break;
+        }
+      }
+      if (idx < 0) return false;
+      state = {
+        ...state,
+        messages: state.messages.slice(0, idx),
+        inFlightText: '',
+      };
+      notify();
+      return true;
+    },
   };
 }
 

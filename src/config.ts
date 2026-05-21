@@ -2,13 +2,20 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { AgentConfig, ModelConfig } from './mcp/types.js';
+import { readSecret } from './secrets/keychain.js';
 
 const DEFAULT_MODEL: ModelConfig = {
   baseURL: 'http://localhost:1234/v1',
   model: 'qwen3-30b-a3b',
   apiKey: 'lm-studio',
-  temperature: 0.8,
-  frequencyPenalty: 1.15,
+  temperature: 0.6,
+  topP: 0.95,
+  topK: 20,
+  minP: 0,
+  presencePenalty: 0,
+  frequencyPenalty: 0,
+  repeatPenalty: 1,
+  maxTokens: 4096,
 };
 
 export function globalConfigDir(): string {
@@ -77,6 +84,39 @@ export function writeGlobalConfig(model: { baseURL: string; model: string; apiKe
   fs.writeFileSync(file, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
 }
 
+function resolveDefaultProfile(merged: Record<string, any>): void {
+  const defaultProfile =
+    typeof merged.defaultProfile === 'string' ? merged.defaultProfile : '';
+  if (!defaultProfile) return;
+
+  const profile = merged.profiles?.[defaultProfile];
+  if (!profile || typeof profile !== 'object') return;
+  const credentialId = profile.credentialId;
+  if (typeof credentialId !== 'string') return;
+  const credential = merged.credentials?.[credentialId];
+  if (!credential || typeof credential !== 'object') return;
+  if (typeof credential.baseURL !== 'string' || typeof profile.model !== 'string') return;
+
+  const model: Record<string, any> = {
+    ...(merged.model && typeof merged.model === 'object' ? merged.model : {}),
+    provider: credential.provider,
+    baseURL: credential.baseURL,
+    model: profile.model,
+  };
+
+  if (typeof credential.secretRef === 'string') {
+    model.secretRef = credential.secretRef;
+    model.apiKey = readSecret(
+      credential.secretRef,
+      `MA needs access to ${credentialId} for this session`
+    );
+  } else if (credential.apiKeyMode === 'none') {
+    model.apiKey = 'lm-studio';
+  }
+
+  merged.model = model;
+}
+
 export function loadConfigDetailed(configPath?: string): ConfigLoadResult {
   const sources: string[] = [];
 
@@ -103,6 +143,8 @@ export function loadConfigDetailed(configPath?: string): ConfigLoadResult {
     deepMerge(merged, readJson(explicit));
     if (!sources.includes(explicit)) sources.push(explicit);
   }
+
+  resolveDefaultProfile(merged);
 
   if (!merged.model || typeof merged.model !== 'object') {
     merged.model = { ...DEFAULT_MODEL };

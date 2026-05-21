@@ -29,10 +29,15 @@ import { ErrorTracker } from './agent/error-tracker.js';
 import { StreamParser } from './agent/stream-parser.js';
 import { ToolExecutor } from './agent/tool-executor.js';
 import { findToolSchema, routeToolCall } from './agent/tool-router.js';
+import { resolveProviderCodec } from './provider/detect.js';
 import { loadAgentMd } from './agent/memdir.js';
 import { estimateTokens } from './agent/tokenCount.js';
 import { summarizeRange } from './agent/summarize.js';
 import { createTodoList } from './agent/todo.js';
+import {
+  collectWorkspaceSnapshot,
+  diffWorkspaceSnapshots,
+} from './agent/workspace-diff.js';
 import type { SessionStore } from './session/store.js';
 
 export interface CreateAgentOptions {
@@ -60,6 +65,7 @@ function isTtyInteractive(): boolean {
   return Boolean((process.stdin as any)?.isTTY);
 }
 const DEFAULT_CONTEXT_WINDOW = 32768;
+const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 const COMPACT_TRIGGER_RATIO = 0.75;
 const COMPACT_KEEP_LAST_N = 6;
 const COMPACT_MAX_FAILURES = 2;
@@ -89,6 +95,32 @@ function cleanErrorMessage(msg: string): string {
   let clean = msg.replace(/<[^>]*>/g, '').trim();
   clean = clean.replace(/\s+/g, ' ');
   return clean.slice(0, 200) || 'unknown error';
+}
+
+function getRequiredArgs(
+  tools: ChatCompletionTool[],
+  name: string
+): string[] {
+  const tool = tools.find((t) => t.function.name === name);
+  const required = (tool?.function.parameters as any)?.required;
+  return Array.isArray(required)
+    ? required.filter((arg): arg is string => typeof arg === 'string')
+    : [];
+}
+
+function missingRequiredArgs(
+  tools: ChatCompletionTool[],
+  name: string,
+  args: Record<string, any>
+): string[] {
+  return getRequiredArgs(tools, name).filter((arg) => {
+    const value = args[arg];
+    return (
+      value === undefined ||
+      value === null ||
+      (typeof value === 'string' && value.trim().length === 0)
+    );
+  });
 }
 
 const CREATE_TASK_TOOL: ChatCompletionTool = {
@@ -304,6 +336,7 @@ export async function createAgent(
     baseURL: config.model.baseURL,
     apiKey: config.model.apiKey,
   });
+  const providerCodec = resolveProviderCodec(config.model);
 
   const mcpTools = mcpToolsToOpenAI(connections);
   const tools: ChatCompletionTool[] = [
@@ -430,7 +463,7 @@ export async function createAgent(
       const summary = await summarizeRange(
         client,
         config.model.model,
-        middle,
+        providerCodec.encodeMessages(middle),
         signal
       );
       if (!summary || summary.length < COMPACT_MIN_SUMMARY_CHARS) {
@@ -457,13 +490,28 @@ export async function createAgent(
     }
   }
 
+  function foldTaskIfNeeded(task: Task, summary: string): void {
+    // Preserve root user turns verbatim. Folding every completed root turn makes
+    // context usage appear to drop sharply and forces follow-up questions to
+    // re-read files. Subtasks are internal implementation detail and can still
+    // be summarized to keep task-stack work bounded.
+    if (!task.parentId) return;
+    foldMessages(task.messageAnchor, task.id, summary);
+  }
+
   async function* runTask(
     task: Task,
     rootUserMessage: ChatContent,
     signal?: AbortSignal
   ): AsyncGenerator<AgentEvent, { text: string; hitMaxLoops: boolean }, unknown> {
     const errorTracker = new ErrorTracker();
-    const streamParser = new StreamParser();
+    const effectiveMaxTokens =
+      config.model.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+    const streamParser = new StreamParser({
+      maxContentChars: config.model.maxOutputChars,
+      repeatWindowChars: config.model.repeatWindowChars,
+      repeatWindowRepeats: config.model.repeatWindowRepeats,
+    });
     const toolExecutor = new ToolExecutor(
       config,
       connections,
@@ -479,7 +527,7 @@ export async function createAgent(
     } else {
       openingContent = rootUserMessage as unknown as ChatCompletionUserMessageParam['content'];
     }
-    store.appendUser(openingContent as any);
+    store.appendUser(openingContent as any, { rootTurn: !task.parentId });
     persistPending();
 
     let finalText = '';
@@ -501,15 +549,36 @@ export async function createAgent(
 
       const stateStr = renderStackState(stack);
       const suffix = (stateStr || '') + loopWarning;
-      const requestMessages = store.buildRequestMessages(suffix);
+      const requestMessages = providerCodec.encodeMessages(
+        store.buildRequestMessages(suffix)
+      );
 
       const request: Parameters<typeof client.chat.completions.create>[0] = {
         model: config.model.model,
         messages: requestMessages,
         temperature: tempOverride ?? config.model.temperature ?? 0.6,
+        ...(config.model.topP !== undefined ? { top_p: config.model.topP } : {}),
+        ...(config.model.presencePenalty !== undefined ? { presence_penalty: config.model.presencePenalty } : {}),
         frequency_penalty: tempOverride !== undefined ? 0 : (config.model.frequencyPenalty ?? 1.1),
-        ...(config.model.maxTokens ? { max_tokens: config.model.maxTokens } : {}),
+        ...(effectiveMaxTokens > 0 ? { max_tokens: effectiveMaxTokens } : {}),
       };
+      const localModelParams: Record<string, unknown> = {};
+      if (config.model.topK !== undefined) localModelParams.top_k = config.model.topK;
+      if (config.model.minP !== undefined) localModelParams.min_p = config.model.minP;
+      if (config.model.repeatPenalty !== undefined) {
+        localModelParams.repeat_penalty = config.model.repeatPenalty;
+      }
+      Object.assign(
+        request as unknown as Record<string, unknown>,
+        localModelParams,
+        providerCodec.buildRequestExtras?.({
+          model: config.model,
+          messages: requestMessages,
+          tools,
+          stream: true,
+        }) ?? {},
+        config.model.extraParams ?? {}
+      );
       if (tools.length > 0) {
         request.tools = tools;
         request.tool_choice = 'auto';
@@ -522,7 +591,13 @@ export async function createAgent(
         const os = await import('node:os');
         const path = await import('node:path');
         const logFile = process.env.MA_DEBUG || path.join(os.homedir(), '.my-agent', 'api-debug.log');
-        const dbg = requestMessages.map((m: any) => ({ role: m.role, content: typeof m.content === 'string' ? m.content.slice(0, 200) : m.content, tool_calls: m.tool_calls?.length, tool_call_id: m.tool_call_id }));
+        const dbg = requestMessages.map((m: any) => ({
+          role: m.role,
+          content: typeof m.content === 'string' ? m.content.slice(0, 200) : m.content,
+          reasoning_content: typeof m.reasoning_content === 'string' ? `${m.reasoning_content.length} chars` : undefined,
+          tool_calls: m.tool_calls?.length,
+          tool_call_id: m.tool_call_id,
+        }));
         fs.appendFileSync(logFile, `[${new Date().toISOString()}] API REQUEST messages (${requestMessages.length}):\n${JSON.stringify(dbg, null, 2)}\n\n`);
       } catch { /* ignore */ }
 
@@ -549,7 +624,9 @@ export async function createAgent(
           store.truncateForRecovery(firstUserIdx, tailStart);
 
           const stateStr2 = renderStackState(stack);
-          request.messages = store.buildRequestMessages(stateStr2);
+          request.messages = providerCodec.encodeMessages(
+            store.buildRequestMessages(stateStr2)
+          );
           stream = await client.chat.completions.create(
             { ...request, stream: true },
             { signal }
@@ -559,9 +636,13 @@ export async function createAgent(
         }
       }
 
-      const { content: contentBuf, toolCalls } = yield* streamParser.parse(
+      const parsedTurn = yield* streamParser.parse(
         stream
       );
+      const { content: contentBuf, toolCalls } = parsedTurn;
+      const reasoningContent = providerCodec.shouldStoreReasoningContent(parsedTurn)
+        ? parsedTurn.reasoningContent
+        : undefined;
 
       if (!toolCalls) {
         // If content is empty/whitespace after tool use, nudge model to answer
@@ -570,16 +651,56 @@ export async function createAgent(
           persistPending();
           continue; // one more loop to get actual answer
         }
-        store.appendAssistant(contentBuf);
+        store.appendAssistant(contentBuf, undefined, { reasoningContent });
         persistPending();
         finalText = contentBuf;
         return { text: finalText, hitMaxLoops: false };
       }
 
-      store.appendAssistant(contentBuf.trim() || '', toolCalls);
+      const invalidToolCalls = toolCalls
+        .map((tc) => {
+          const args = normalizeArguments(tc.function.arguments);
+          const missing = missingRequiredArgs(tools, tc.function.name, args);
+          return { tc, args, missing };
+        })
+        .filter((item) => item.missing.length > 0);
 
-      // P0-b: If ALL tool_calls have empty args, pop the assistant message and retry
-      // with lower temperature. Don't let model see its own empty-args history.
+      // P0-b: If the model emits tool calls with missing required args, retry
+      // without writing that malformed assistant(tool_calls) into history.
+      // Qwen3/LM Studio templates can crash when bad multi-step tool history is
+      // echoed back, especially for mixed valid+empty parallel tool calls.
+      if (invalidToolCalls.length > 0) {
+        if (emptyArgsRetries < 2) {
+          emptyArgsRetries += 1;
+          tempOverride = 0.1;
+          continue;
+        }
+        const details = invalidToolCalls
+          .map(
+            ({ tc, missing }) =>
+              `${tc.function.name} missing [${missing.join(', ')}]`
+          )
+          .join('; ');
+        for (const { tc, args, missing } of invalidToolCalls) {
+          yield { type: 'tool:call', name: tc.function.name, args };
+          yield {
+            type: 'tool:result',
+            ok: false,
+            content: `Error: tool "${tc.function.name}" requires [${missing.join(', ')}] but received incomplete arguments.`,
+          };
+        }
+        store.appendUser(
+          `Your previous tool call arguments were invalid: ${details}. Retry with complete JSON arguments for every required field.`
+        );
+        persistPending();
+        emptyArgsRetries = 0;
+        tempOverride = 0.1;
+        continue;
+      }
+
+      store.appendAssistant(contentBuf.trim() || '', toolCalls, { reasoningContent });
+
+      // P0-b compatibility guard retained for tools without explicit schemas.
       const allEmpty = toolCalls.every((tc) => {
         const a = normalizeArguments(tc.function.arguments);
         return Object.keys(a).length === 0;
@@ -649,6 +770,8 @@ export async function createAgent(
       return;
     }
 
+    const workspaceBefore = collectWorkspaceSnapshot();
+
     outer: while (stack.size() > 0) {
       if (signal?.aborted) break;
 
@@ -656,7 +779,6 @@ export async function createAgent(
       if (!task) break;
 
       task.messageAnchor = store.length;
-
       yield { type: 'task:start', taskId: task.id, prompt: task.prompt };
 
       let taskText = '';
@@ -689,7 +811,7 @@ export async function createAgent(
 
       if (aborted) {
         stack.markFailed(task.id, 'aborted');
-        foldMessages(task.messageAnchor, task.id, 'ABORTED');
+        foldTaskIfNeeded(task, 'ABORTED');
         yield { type: 'task:aborted', taskId: task.id };
         yield { type: 'aborted' };
         stack.abortAll();
@@ -699,25 +821,31 @@ export async function createAgent(
       if (failed) {
         const cleanError = cleanErrorMessage(failMessage);
         stack.markFailed(task.id, cleanError);
-        foldMessages(
-          task.messageAnchor,
-          task.id,
-          `FAILED: ${cleanError}`
-        );
+        foldTaskIfNeeded(task, `FAILED: ${cleanError}`);
         yield { type: 'task:failed', taskId: task.id, error: cleanError };
       } else if (hitMaxLoops) {
         stack.markFailed(task.id, taskText);
-        foldMessages(task.messageAnchor, task.id, taskText);
+        foldTaskIfNeeded(task, taskText);
         yield { type: 'task:failed', taskId: task.id, error: 'max loops' };
       } else {
         stack.markDone(task.id, taskText);
-        foldMessages(task.messageAnchor, task.id, taskText || '(no output)');
+        foldTaskIfNeeded(task, taskText || '(no output)');
         const next = stack.peek();
         yield {
           type: 'task:done',
           taskId: task.id,
           next: next ? next.id : undefined,
         };
+      }
+    }
+
+    if (!signal?.aborted) {
+      const workspaceDiff = diffWorkspaceSnapshots(
+        workspaceBefore,
+        collectWorkspaceSnapshot()
+      );
+      if (workspaceDiff) {
+        yield { type: 'workspace:diff', artifact: workspaceDiff };
       }
     }
 
@@ -743,6 +871,14 @@ export async function createAgent(
     return stack.abortAll();
   }
 
+  function revertLastTurnContextOnly(): number {
+    const removed = store.revertLastRootTurn();
+    if (removed > 0) {
+      stack.clear();
+    }
+    return removed;
+  }
+
   function getContextUsage(): { used: number; total: number } {
     return {
       used: estimateTokens(store.snapshot()),
@@ -750,7 +886,7 @@ export async function createAgent(
     };
   }
 
-  return { chat, reset, getTaskStack, getArchive, abortAll, respondConfirm, getContextUsage };
+  return { chat, reset, getTaskStack, getArchive, abortAll, revertLastTurnContextOnly, respondConfirm, getContextUsage };
 }
 
 export const __internal__ = {

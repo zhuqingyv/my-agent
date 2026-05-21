@@ -10,11 +10,29 @@ interface CustomTextInputProps {
   history?: string[];
   onHistoryUp?: () => void;
   onHistoryDown?: () => void;
+  onEscape?: () => void;
+  onUpArrow?: () => boolean;
+  onDownArrow?: () => boolean;
+  onTab?: (value: string, cursorPos: number) => string | void;
+  onReturn?: (value: string, cursorPos: number) => boolean;
 }
 
 const PASTE_JUNK_RE = /\[200~|\[201~|\x1b\[200~|\x1b\[201~/g;
 
-export function CustomTextInput({ value, onChange, onSubmit, placeholder, disabled, onHistoryUp, onHistoryDown }: CustomTextInputProps) {
+export function CustomTextInput({
+  value,
+  onChange,
+  onSubmit,
+  placeholder,
+  disabled,
+  onHistoryUp,
+  onHistoryDown,
+  onEscape,
+  onUpArrow,
+  onDownArrow,
+  onTab,
+  onReturn,
+}: CustomTextInputProps) {
   const [cursorPos, setCursorPos] = useState(value.length);
 
   useEffect(() => {
@@ -29,6 +47,7 @@ export function CustomTextInput({ value, onChange, onSubmit, placeholder, disabl
     if (disabled) return;
 
     if (key.return) {
+      if (onReturn?.(value, cursorPos)) return;
       onSubmit?.(value);
       return;
     }
@@ -71,15 +90,29 @@ export function CustomTextInput({ value, onChange, onSubmit, placeholder, disabl
     }
 
     if (key.upArrow) {
+      if (onUpArrow?.()) return;
       onHistoryUp?.();
       return;
     }
     if (key.downArrow) {
+      if (onDownArrow?.()) return;
       onHistoryDown?.();
       return;
     }
 
-    if (key.escape || key.tab) return;
+    if (key.escape) {
+      onEscape?.();
+      return;
+    }
+
+    if (key.tab) {
+      const next = onTab?.(value, cursorPos);
+      if (typeof next === 'string') {
+        onChange(next);
+        setCursorPos(next.length);
+      }
+      return;
+    }
     if (key.ctrl || key.meta) return;
 
     if (!input) return;

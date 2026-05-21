@@ -1,0 +1,135 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { executeCommand, getAllCommands, getSuggestedCommands } from '../src/cli/utils/commands.js';
+
+function baseContext(overrides: Record<string, unknown> = {}) {
+  return {
+    agent: {},
+    connections: [],
+    config: { model: { baseURL: 'http://localhost', model: 'm', apiKey: 'k' }, mcpServers: {} },
+    exit: () => {},
+    ...overrides,
+  } as any;
+}
+
+async function withTempCwd<T>(fn: () => Promise<T>): Promise<T> {
+  const cwd = process.cwd();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ma-command-test-'));
+  fs.mkdirSync(path.join(dir, '.ma', 'skills'), { recursive: true });
+  process.chdir(dir);
+  try {
+    return await fn();
+  } finally {
+    process.chdir(cwd);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('/revert calls the UI-aware revert callback', async () => {
+  await withTempCwd(async () => {
+    let called = 0;
+    const result = await executeCommand('/revert', baseContext({
+      revertLastTurn: () => {
+        called++;
+        return true;
+      },
+    }));
+
+    assert.equal(called, 1);
+    assert.equal(result, '[已回退上一轮对话，文件未回退]');
+  });
+});
+
+test('/revert reports when there is no visible turn to revert', async () => {
+  await withTempCwd(async () => {
+    const result = await executeCommand('/revert', baseContext({
+      revertLastTurn: () => false,
+    }));
+
+    assert.equal(result, '[没有可回退的对话]');
+  });
+});
+
+test('/model opens the model picker when no args are provided', async () => {
+  await withTempCwd(async () => {
+    let called = 0;
+    const result = await executeCommand('/model', baseContext({
+      openModelPicker: () => {
+        called++;
+      },
+    }));
+
+    assert.equal(called, 1);
+    assert.equal(result, null);
+  });
+});
+
+test('/help is available for slash command suggestions', async () => {
+  await withTempCwd(async () => {
+    const commands = await getAllCommands();
+    assert.equal(commands.has('/help'), true);
+
+    const result = await executeCommand('/help', baseContext());
+    assert.match(String(result), /\/model\s+Open model switcher/);
+    assert.match(String(result), /\/help\s+Show commands/);
+  });
+});
+
+test('slash suggestions only include user-facing commands', async () => {
+  await withTempCwd(async () => {
+    const suggestions = await getSuggestedCommands();
+
+    assert.deepEqual(
+      Array.from(suggestions.keys()).sort(),
+      ['/clear', '/exit', '/help', '/model']
+    );
+
+    const all = await getAllCommands();
+    assert.equal(all.has('/abort'), true);
+    assert.equal(suggestions.has('/abort'), false);
+    assert.equal(suggestions.has('/archive'), false);
+    assert.equal(suggestions.has('/models'), false);
+    assert.equal(suggestions.has('/tools'), false);
+  });
+});
+
+test('/model use switches by matching profile id', async () => {
+  await withTempCwd(async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ma-model-command-home-'));
+    const originalHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      fs.mkdirSync(path.join(home, '.my-agent'), { recursive: true });
+      fs.writeFileSync(
+        path.join(home, '.my-agent', 'config.json'),
+        JSON.stringify({
+          credentials: {
+            'LMStudio-local': {
+              provider: 'lmstudio',
+              baseURL: 'http://localhost:1234/v1',
+              apiKeyMode: 'none',
+              modelsCache: { models: ['qwen-a'] },
+            },
+          },
+          profiles: {},
+        })
+      );
+      let selected = '';
+      const result = await executeCommand('/model use LMStudio-local/qwen-a', baseContext({
+        switchModelChoice: (choice: any) => {
+          selected = choice.id;
+        },
+      }));
+
+      assert.equal(result, null);
+      assert.equal(selected, 'LMStudio-local/qwen-a');
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+});

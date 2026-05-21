@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
-import { McpClient } from '../src/mcp/client.js';
+import { buildMcpEnv, McpClient } from '../src/mcp/client.js';
 
 function fakeProc() {
   const stdin = new PassThrough();
@@ -30,6 +33,34 @@ function readSentLines(stdin: PassThrough): Promise<string[]> {
     setTimeout(() => resolve(lines), 20);
   });
 }
+
+test('buildMcpEnv: drops unreadable NODE_EXTRA_CA_CERTS for child processes', () => {
+  const prev = process.env.NODE_EXTRA_CA_CERTS;
+  process.env.NODE_EXTRA_CA_CERTS = path.join(os.tmpdir(), 'ma-missing-cert.pem');
+  try {
+    const env = buildMcpEnv();
+    assert.equal(env.NODE_EXTRA_CA_CERTS, undefined);
+  } finally {
+    if (prev === undefined) delete process.env.NODE_EXTRA_CA_CERTS;
+    else process.env.NODE_EXTRA_CA_CERTS = prev;
+  }
+});
+
+test('buildMcpEnv: keeps readable NODE_EXTRA_CA_CERTS', () => {
+  const prev = process.env.NODE_EXTRA_CA_CERTS;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ma-cert-'));
+  const cert = path.join(dir, 'cert.pem');
+  fs.writeFileSync(cert, 'test\n');
+  process.env.NODE_EXTRA_CA_CERTS = cert;
+  try {
+    const env = buildMcpEnv();
+    assert.equal(env.NODE_EXTRA_CA_CERTS, cert);
+  } finally {
+    if (prev === undefined) delete process.env.NODE_EXTRA_CA_CERTS;
+    else process.env.NODE_EXTRA_CA_CERTS = prev;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('McpClient.request: round-trip via id matching', async () => {
   const proc = fakeProc();

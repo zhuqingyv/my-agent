@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import type { AgentConfig, McpConnection, Agent } from '../mcp/types.js';
+import type { SessionStore } from '../session/store.js';
 import { createUiStore } from './state/store.js';
 import { useAgent } from './hooks/useAgent.js';
 import { useDebugLog } from './hooks/useDebugLog.js';
@@ -16,14 +17,30 @@ import { ThinkingBar } from './components/ThinkingBar.js';
 import { InputBox } from './components/InputBox.js';
 import { StatusBar } from './components/StatusBar.js';
 import { ConfirmDialog } from './components/ConfirmDialog.js';
+import {
+  getSessionUserPreview,
+  SessionPicker,
+  selectProjectSessions,
+  type SessionPickerSession,
+} from './components/SessionPicker.js';
+import { ModelPicker } from './components/ModelPicker.js';
 import type { PendingConfirm } from './hooks/useAgent.js';
 import { isCommand, executeCommand } from './utils/commands.js';
+import {
+  listModelChoices,
+  saveDefaultModelChoice,
+  type ModelChoice,
+} from './utils/modelProfiles.js';
 
 export interface AppProps {
   config: AgentConfig;
   connections: McpConnection[];
   agent: Agent;
+  sessionStore: SessionStore;
+  currentSessionId: string;
   debug?: boolean;
+  onSwitchSession?: (sessionId: string) => void;
+  onRestartSession?: (sessionId: string) => void;
 }
 
 let sysMsgCounter = 0;
@@ -31,7 +48,7 @@ function nextSysId() {
   return `sys_${++sysMsgCounter}`;
 }
 
-export function App({ config, connections, agent, debug }: AppProps) {
+export function App({ config, connections, agent, sessionStore, currentSessionId, debug, onSwitchSession, onRestartSession }: AppProps) {
   const app = useApp();
   const store = useMemo(() => {
     const s = createUiStore();
@@ -53,6 +70,8 @@ export function App({ config, connections, agent, debug }: AppProps) {
   const { messages, thinking, inFlightText } = state;
 
   const [pendingImages, setPendingImages] = useState<UiImage[]>([]);
+  const [sessionPickerSessions, setSessionPickerSessions] = useState<SessionPickerSession[] | null>(null);
+  const [modelPickerModels, setModelPickerModels] = useState<ModelChoice[] | null>(null);
 
   const handleConfirm = useCallback(
     (approved: boolean) => {
@@ -62,6 +81,41 @@ export function App({ config, connections, agent, debug }: AppProps) {
     },
     [agent, pendingConfirm]
   );
+
+  const handleRevertLastTurn = useCallback(() => {
+    const removed = agent.revertLastTurnContextOnly();
+    if (removed <= 0) return false;
+    const updatedUi = store.revertLastTurn();
+    log(`reverted last turn context (${removed} messages), ui=${updatedUi}`);
+    return true;
+  }, [agent, store, log]);
+
+  const openModelPicker = useCallback(async () => {
+    try {
+      store.pushMessage({ kind: 'system', id: nextSysId(), text: '[正在查询模型列表...]' });
+      const choices = await listModelChoices(config);
+      setModelPickerModels(choices);
+    } catch (err) {
+      store.pushMessage({
+        kind: 'system',
+        id: nextSysId(),
+        text: `Failed to list models: ${(err as Error).message}`,
+      });
+    }
+  }, [config, store]);
+
+  const switchModelChoice = useCallback((model: ModelChoice) => {
+    setModelPickerModels(null);
+    saveDefaultModelChoice(model);
+    store.pushMessage({
+      kind: 'system',
+      id: nextSysId(),
+      text: `[已切换默认模型: ${model.label}，正在重启当前会话]`,
+    });
+    log(`switch model: ${model.id}`);
+    onRestartSession?.(currentSessionId);
+    app.exit();
+  }, [app, currentSessionId, log, onRestartSession, store]);
 
   const handleSubmit = useCallback(
     (text: string) => {
@@ -73,6 +127,9 @@ export function App({ config, connections, agent, debug }: AppProps) {
             connections,
             config,
             exit: () => app.exit(),
+            revertLastTurn: handleRevertLastTurn,
+            openModelPicker,
+            switchModelChoice,
           });
           if (text === '/clear') {
             store.clearMessages();
@@ -97,8 +154,43 @@ export function App({ config, connections, agent, debug }: AppProps) {
         send(text);
       }
     },
-    [agent, connections, app, store, send, log, pendingImages]
+    [agent, connections, app, store, send, log, pendingImages, handleRevertLastTurn, config, openModelPicker, switchModelChoice]
   );
+
+  const openSessionPicker = useCallback(() => {
+    const allSessions = sessionStore.list(50);
+    const currentCwd = allSessions.find((session) => session.id === currentSessionId)?.cwd ?? process.cwd();
+    const sessions = selectProjectSessions(allSessions, currentSessionId, currentCwd);
+    const pickerSessions = sessions.map((session) => ({
+      ...session,
+      preview: getSessionUserPreview(sessionStore.load(session.id)),
+    }));
+    const otherSessions = pickerSessions.filter((session) => session.id !== currentSessionId);
+    if (otherSessions.length === 0) {
+      store.pushMessage({
+        kind: 'system',
+        id: nextSysId(),
+        text: '[当前项目没有其他可切换的会话]',
+      });
+      return;
+    }
+    setSessionPickerSessions(pickerSessions);
+  }, [currentSessionId, sessionStore, store]);
+
+  const handleSelectSession = useCallback((sessionId: string) => {
+    setSessionPickerSessions(null);
+    if (sessionId === currentSessionId) {
+      store.pushMessage({
+        kind: 'system',
+        id: nextSysId(),
+        text: '[仍在当前会话]',
+      });
+      return;
+    }
+    log(`switch session: ${sessionId}`);
+    onSwitchSession?.(sessionId);
+    app.exit();
+  }, [app, currentSessionId, log, onSwitchSession, store]);
 
   useInput((_input, key) => {
     if (key.escape && thinking) {
@@ -211,10 +303,29 @@ export function App({ config, connections, agent, debug }: AppProps) {
         />
       ) : null}
 
+      {sessionPickerSessions ? (
+        <SessionPicker
+          sessions={sessionPickerSessions}
+          currentSessionId={currentSessionId}
+          onSelect={handleSelectSession}
+          onCancel={() => setSessionPickerSessions(null)}
+        />
+      ) : null}
+
+      {modelPickerModels ? (
+        <ModelPicker
+          models={modelPickerModels}
+          onSelect={switchModelChoice}
+          onCancel={() => setModelPickerModels(null)}
+        />
+      ) : null}
+
       <InputBox
         onSubmit={handleSubmit}
-        disabled={!!thinking || !!pendingConfirm}
+        disabled={!!thinking || !!pendingConfirm || !!sessionPickerSessions || !!modelPickerModels}
         pendingImages={pendingImages}
+        onClearPendingImages={() => setPendingImages([])}
+        onOpenSessionPicker={openSessionPicker}
       />
 
       <StatusBar
