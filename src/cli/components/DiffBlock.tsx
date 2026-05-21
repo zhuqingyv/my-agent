@@ -11,7 +11,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import pico from 'picocolors';
 import type { DiffData } from '../state/types.js';
-import { buildDiffLines, type RenderDiffLine } from '../utils/diff-lines.js';
+import { buildDiffLines, truncateDiffContent, type RenderDiffLine } from '../utils/diff-lines.js';
 
 interface DiffBlockProps {
   diff: DiffData;
@@ -55,6 +55,7 @@ export function DiffBlock({ diff }: DiffBlockProps) {
     const half = Math.floor(MAX_VISIBLE / 2);
     const head = contentLines.slice(0, half);
     const tail = contentLines.slice(-half);
+    const collapsed = Math.max(0, contentLines.length - head.length - tail.length);
 
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
@@ -71,9 +72,11 @@ export function DiffBlock({ diff }: DiffBlockProps) {
           {head.map((line, i) => (
             <DiffLine key={`h-${i}`} line={line} />
           ))}
-          <Box>
-            <Text dimColor>{COLLAPSE_MARKER} ({totalChanges - MAX_VISIBLE} lines collapsed) {COLLAPSE_MARKER}</Text>
-          </Box>
+          {collapsed > 0 && (
+            <Box>
+              <Text dimColor wrap="truncate-end">{COLLAPSE_MARKER} ({collapsed} lines collapsed) {COLLAPSE_MARKER}</Text>
+            </Box>
+          )}
           {tail.map((line, i) => (
             <DiffLine key={`t-${i}`} line={line} />
           ))}
@@ -114,25 +117,26 @@ export function DiffBlock({ diff }: DiffBlockProps) {
 function DiffLine({ line }: { line: RenderDiffLine }) {
   const oldLine = formatLineNo(line.oldLine);
   const newLine = formatLineNo(line.newLine);
+  const content = truncateDiffContent(line.content);
 
   if (line.kind === 'file') {
     return (
       <Box>
-        <Text color="cyan" dimColor>{'     '}{line.content}</Text>
+        <Text color="cyan" dimColor wrap="truncate-end">{'     '}{content}</Text>
       </Box>
     );
   }
   if (line.kind === 'hunk') {
     return (
       <Box>
-        <Text color="yellow">{'     '}{line.content}</Text>
+        <Text color="yellow" wrap="truncate-end">{'     '}{content}</Text>
       </Box>
     );
   }
   if (line.kind === 'meta') {
     return (
       <Box>
-        <Text color="yellow" dimColor>{'     '}{line.content}</Text>
+        <Text color="yellow" dimColor wrap="truncate-end">{'     '}{content}</Text>
       </Box>
     );
   }
@@ -148,7 +152,7 @@ function DiffLine({ line }: { line: RenderDiffLine }) {
       <Text>{' '}</Text>
       <Text color={color} dimColor={dim}>{line.sign}</Text>
       <Text>{' '}</Text>
-      <Text color={color} dimColor={dim}>{line.content}</Text>
+      <Text color={color} dimColor={dim} wrap="truncate-end">{content}</Text>
     </Box>
   );
 }

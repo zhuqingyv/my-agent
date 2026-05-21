@@ -10,6 +10,14 @@ export interface RenderDiffLine {
   content: string;
 }
 
+export const MAX_DIFF_LINE_CONTENT = 110;
+
+export function truncateDiffContent(content: string, maxLength = MAX_DIFF_LINE_CONTENT): string {
+  if (content.length <= maxLength) return content;
+  if (maxLength <= 3) return '.'.repeat(Math.max(0, maxLength));
+  return `${content.slice(0, maxLength - 3)}...`;
+}
+
 export function buildDiffLines(diffText: string): RenderDiffLine[] {
   const parsed = parseDiff(diffText);
   const files = parsed.filter((file) => file.chunks.length > 0);

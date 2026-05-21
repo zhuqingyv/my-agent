@@ -11,7 +11,7 @@ import {
   collectWorkspaceSnapshot,
   diffWorkspaceSnapshots,
 } from '../src/agent/workspace-diff.js';
-import { buildDiffLines } from '../src/cli/utils/diff-lines.js';
+import { buildDiffLines, truncateDiffContent } from '../src/cli/utils/diff-lines.js';
 
 test('parseToolResultDiff: parses fs-edit result with Chinese colon path separator', () => {
   const content = [
@@ -138,6 +138,16 @@ test('buildDiffLines: classifies MA simple numbered diff format', () => {
   assert.equal(lines[3].newLine, 39);
   assert.equal(lines[4].oldLine, 40);
   assert.equal(lines[4].newLine, 40);
+});
+
+test('truncateDiffContent: keeps diff rows single-line friendly', () => {
+  const longMarkdown = '> '.repeat(80) + 'Local-first AI 应用平台，连接任意 OpenAI 兼容端点。';
+
+  const truncated = truncateDiffContent(longMarkdown, 40);
+
+  assert.equal(truncated.length, 40);
+  assert.equal(truncated.endsWith('...'), true);
+  assert.match(truncated, /^> > > /);
 });
 
 function git(cwd: string, args: string[]): string {

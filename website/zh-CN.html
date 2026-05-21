@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MA - 本地优先的多模型终端编程 Agent</title>
+    <meta
+      name="description"
+      content="MA 是一个本地优先、多模型的终端编程 Agent，支持 LM Studio、DeepSeek、安全密钥存储、MCP 工具和键盘优先 TUI。"
+    />
+    <meta property="og:title" content="MA - 终端编程 Agent" />
+    <meta property="og:description" content="面向真实仓库的本地优先多模型编程 Agent。" />
+    <meta property="og:image" content="./assets/logo.png" />
+    <link rel="icon" href="./assets/logo.png" type="image/png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="MA 首页">
+        <img src="./assets/logo.png" alt="" />
+        <span>MA</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a href="#features">功能</a>
+        <a href="#benchmark">Benchmark</a>
+        <a href="#install">安装</a>
+        <a href="./index.html">English</a>
+        <a class="nav-button" href="https://github.com/zhuqingyv/my-agent">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-grid" aria-hidden="true"></div>
+        <div class="hero-copy">
+          <p class="eyebrow">v0.1.0-alpha</p>
+          <h1>MA</h1>
+          <p class="lede">本地优先、多模型的终端编程 Agent。</p>
+          <p class="sublede">
+            在 LM Studio 和 DeepSeek 之间切换，让 API Key 离开明文配置，并在真实仓库里使用 MCP 工具完成工作。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="https://github.com/zhuqingyv/my-agent/releases/tag/v0.1.0-alpha">下载 alpha</a>
+            <a class="button secondary" href="https://github.com/zhuqingyv/my-agent">查看源码</a>
+          </div>
+        </div>
+        <div class="hero-logo">
+          <img src="./assets/logo.png" alt="MA 像素风 logo" />
+        </div>
+      </section>
+
+      <section class="terminal-band" aria-label="快速开始终端">
+        <div class="terminal">
+          <div class="terminal-bar"><span></span><span></span><span></span></div>
+          <pre><code>$ ma init
+? Model source
+  LM Studio local
+› DeepSeek official
+
+$ ma
+/model  用上下键切换 provider 和模型</code></pre>
+        </div>
+      </section>
+
+      <section id="features" class="section">
+        <div class="section-heading">
+          <p class="eyebrow">面向日常开发</p>
+          <h2>尊重真实项目的终端体验。</h2>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <h3>默认多模型</h3>
+            <p>当前支持 LM Studio 本地模型和 DeepSeek。Provider/model profile 让同名模型也能清楚区分：<code>DeepSeek/deepseek-v4-pro</code>。</p>
+          </article>
+          <article>
+            <h3>快速切换模型</h3>
+            <p><code>/model</code> 打开键盘选择器，聚合发现到的模型，并记住上一次选择的 profile。</p>
+          </article>
+          <article>
+            <h3>远程密钥更安全</h3>
+            <p>远程 API Key 存在 macOS Keychain。配置文件只保存引用，不保存明文密钥。</p>
+          </article>
+          <article>
+            <h3>内置 MCP 工具</h3>
+            <p><code>ma init</code> 后即可使用 shell、文件读写、结构化编辑、grep 和 web search。</p>
+          </article>
+          <article>
+            <h3>斜杠指令</h3>
+            <p>输入 <code>/</code> 查看建议，用上下键选择，用 Tab 补全。</p>
+          </article>
+          <article>
+            <h3>项目指令和技能</h3>
+            <p>MA 读取 <code>AGENT.md</code> 和项目内 <code>.ma/skills/*.md</code>，把团队工作流沉淀到仓库里。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="benchmark" class="section split">
+        <div>
+          <p class="eyebrow">Alpha Benchmark</p>
+          <h2>本地 Qwen3-30B 通过 L0-L2 发布门槛。</h2>
+          <p>
+            MA 的 alpha benchmark 覆盖连接稳定性、工具调用稳定性和多轮本地项目任务。它是产品发布门槛，不是通用排行榜。
+          </p>
+          <a class="inline-link" href="https://github.com/zhuqingyv/my-agent/blob/main/docs/benchmark-results.md">查看 benchmark 细节</a>
+        </div>
+        <div class="metric-table" role="table" aria-label="Benchmark results">
+          <div role="row"><span role="columnheader">运行环境</span><strong role="cell">LM Studio</strong></div>
+          <div role="row"><span role="columnheader">模型</span><strong role="cell">Qwen3-30B local</strong></div>
+          <div role="row"><span role="columnheader">任务数</span><strong role="cell">70</strong></div>
+          <div role="row"><span role="columnheader">L0</span><strong role="cell">100%</strong></div>
+          <div role="row"><span role="columnheader">L1</span><strong role="cell">98.7%</strong></div>
+          <div role="row"><span role="columnheader">L2</span><strong role="cell">95.3%</strong></div>
+        </div>
+      </section>
+
+      <section id="install" class="section install">
+        <div class="section-heading">
+          <p class="eyebrow">安装</p>
+          <h2>下载，解压，运行。</h2>
+        </div>
+        <div class="install-grid">
+          <div>
+            <h3>macOS / Linux</h3>
+            <pre><code>tar -xzf ma-*.tar.gz
+cd ma-*
+./ma init
+./ma</code></pre>
+          </div>
+          <div>
+            <h3>Windows</h3>
+            <pre><code>Expand-Archive ma-*.zip
+cd ma-*
+.ma.cmd init
+.ma.cmd</code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>MA v0.1.0-alpha</span>
+      <a href="https://github.com/zhuqingyv/my-agent/releases/tag/v0.1.0-alpha">Release</a>
+      <a href="https://github.com/zhuqingyv/my-agent">GitHub</a>
+    </footer>
+  </body>
+</html>
