@@ -17,6 +17,7 @@ import type { McpConnection } from '../mcp/types.js';
 import { App } from './App.js';
 import { VERSION } from './version.js';
 import { assertInteractiveInput, TerminalInputError } from './terminal.js';
+import { runContextWatch } from './watch.js';
 
 let activeConnections: McpConnection[] = [];
 
@@ -166,6 +167,27 @@ async function main(): Promise<void> {
           `${pc.cyan(m.id)}  ${pc.dim(when)}  ${pc.dim(m.model)}  ${pc.dim(`${m.messageCount} msg`)}  ${m.cwd}`
         );
       }
+    });
+
+  program
+    .command('watch')
+    .description('Start local context watch UI for a session')
+    .argument('[sessionId]', 'session id; can also be supplied by ?sid= in the browser')
+    .option('-p, --port <port>', 'HTTP port', '8787')
+    .option('--host <host>', 'HTTP host', '127.0.0.1')
+    .action(async (sessionId: string | undefined, opts: { port?: string; host?: string }) => {
+      const port = Number.parseInt(opts.port ?? '8787', 10);
+      if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+        console.error(pc.red(`invalid port: ${opts.port}`));
+        process.exit(1);
+      }
+      const store = createSessionStore();
+      await runContextWatch({
+        sessionDir: store.getSessionDir(),
+        port,
+        host: opts.host,
+        sid: sessionId,
+      });
     });
 
   program
