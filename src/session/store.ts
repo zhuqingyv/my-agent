@@ -13,6 +13,7 @@ export interface SessionMeta {
 export interface SessionStore {
   create(meta: Omit<SessionMeta, 'id' | 'messageCount'>): string;
   append(sessionId: string, msg: any): void;
+  truncate(sessionId: string, keepMessages: number): void;
   load(sessionId: string): any[];
   list(limit?: number): SessionMeta[];
   latest(): string | null;
@@ -61,6 +62,11 @@ export function createSessionStore(sessionDir?: string): SessionStore {
 
   const jsonlPath = (id: string): string => path.join(dir, `${id}.jsonl`);
   const metaPath = (id: string): string => path.join(dir, `${id}.meta.json`);
+  const sidecarPaths = (id: string): string[] => [
+    path.join(dir, `${id}.context.json`),
+    path.join(dir, `${id}.pool.jsonl`),
+    path.join(dir, `${id}.index.jsonl`),
+  ];
 
   function create(partial: Omit<SessionMeta, 'id' | 'messageCount'>): string {
     const id = makeSessionId(Date.now());
@@ -76,6 +82,21 @@ export function createSessionStore(sessionDir?: string): SessionStore {
     const meta = readMeta(metaPath(sessionId));
     if (meta) {
       meta.messageCount += 1;
+      writeMeta(metaPath(sessionId), meta);
+    }
+  }
+
+  function truncate(sessionId: string, keepMessages: number): void {
+    const kept = Math.max(0, keepMessages);
+    const messages = load(sessionId).slice(0, kept);
+    fs.writeFileSync(
+      jsonlPath(sessionId),
+      messages.map((msg) => JSON.stringify(msg)).join('\n') + (messages.length > 0 ? '\n' : ''),
+      'utf-8'
+    );
+    const meta = readMeta(metaPath(sessionId));
+    if (meta) {
+      meta.messageCount = messages.length;
       writeMeta(metaPath(sessionId), meta);
     }
   }
@@ -123,6 +144,9 @@ export function createSessionStore(sessionDir?: string): SessionStore {
       try {
         fs.rmSync(jsonlPath(meta.id), { force: true });
         fs.rmSync(metaPath(meta.id), { force: true });
+        for (const file of sidecarPaths(meta.id)) {
+          fs.rmSync(file, { force: true });
+        }
         removed++;
       } catch {
         /* ignore */
@@ -135,5 +159,5 @@ export function createSessionStore(sessionDir?: string): SessionStore {
     return dir;
   }
 
-  return { create, append, load, list, latest, prune, getSessionDir };
+  return { create, append, truncate, load, list, latest, prune, getSessionDir };
 }

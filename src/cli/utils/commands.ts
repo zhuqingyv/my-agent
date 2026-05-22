@@ -103,6 +103,38 @@ commands.set('/context', {
     const trimmed = args.trim();
     if (!trimmed) return ctx.agent.inspectContext();
 
+    if (trimmed === 'active') {
+      const items = ctx.agent.activeContext();
+      if (items.length === 0) return 'Active context is empty';
+      return items
+        .map((item) => {
+          const text = (item.content || item.reason || '').replace(/\s+/g, ' ').slice(0, 200);
+          return `i=${item.i} [${item.role}/${item.mode}]${text ? ` ${text}` : ''}`;
+        })
+        .join('\n');
+    }
+
+    if (trimmed === 'pool') {
+      const results = ctx.agent.poolContext(20);
+      if (results.length === 0) return 'Context pool is empty';
+      return results
+        .map((entry, idx) => {
+          const text = (entry.summary || entry.text).replace(/\s+/g, ' ').slice(0, 240);
+          const label = typeof entry.i === 'number' ? `i=${entry.i}` : entry.id;
+          return `${idx + 1}. ${label} [${entry.role}] ${text}`;
+        })
+        .join('\n');
+    }
+
+    if (trimmed === 'clear') {
+      return ctx.agent.clearActiveContext();
+    }
+
+    const dropMatch = trimmed.match(/^drop\s+(\d+)$/);
+    if (dropMatch) {
+      return ctx.agent.dropContext(Number(dropMatch[1]));
+    }
+
     const searchMatch = trimmed.match(/^search\s+(.+)$/);
     if (searchMatch) {
       const query = searchMatch[1].trim();
@@ -127,7 +159,7 @@ commands.set('/context', {
       return ctx.agent.pinContext(pinMatch[1]);
     }
 
-    return 'usage: /context | /context search <q> | /context recall <id> | /context pin <text>';
+    return 'usage: /context | /context active | /context pool | /context search <q> | /context recall <id> | /context pin <text> | /context drop <i> | /context clear';
   },
 });
 

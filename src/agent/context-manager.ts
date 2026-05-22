@@ -123,6 +123,11 @@ export interface ContextManager {
   pin(text: string): string;
   search(query: string, limit?: number): SessionPoolEntry[];
   recall(entryId: string, reason?: string): string;
+  active(): ActiveContextItem[];
+  pool(limit?: number): SessionPoolEntry[];
+  drop(i: number): string;
+  clearActive(): string;
+  truncateFrom(i: number): void;
   applyPatch(rawPatch?: string | null): void;
   archive(entry: Omit<SessionPoolEntry, 'id' | 'sessionId' | 'createdAt' | 'keywords'> & { keywords?: string[] }): SessionPoolEntry | null;
   recordMessages(messages: any[]): TranscriptIndexEntry[];
@@ -187,6 +192,15 @@ function readJson<T>(file: string): T | null {
 function writeJson(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(value, null, 2), 'utf-8');
+}
+
+function writeJsonl(file: string, values: unknown[]): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(
+    file,
+    values.map((value) => JSON.stringify(value)).join('\n') + (values.length > 0 ? '\n' : ''),
+    'utf-8'
+  );
 }
 
 function makeEntryId(now: number): string {
@@ -496,6 +510,52 @@ export function createContextManager(
     return `Recalled ${entry.id}`;
   }
 
+  function active(): ActiveContextItem[] {
+    return current.activeItems.slice();
+  }
+
+  function pool(limit = 20): SessionPoolEntry[] {
+    return loadPool()
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
+  }
+
+  function drop(i: number): string {
+    if (!Number.isInteger(i)) return 'usage: /context drop <i>';
+    const before = current.activeItems.length;
+    current.activeItems = current.activeItems.filter((item) => item.i !== i);
+    current.recalled = current.recalled.filter((item) => item.i !== i);
+    if (current.activeItems.length !== before) {
+      save();
+      return `Dropped i=${i} from active context`;
+    }
+    return `No active context item i=${i}`;
+  }
+
+  function clearActive(): string {
+    current.currentTask = undefined;
+    current.recalled = [];
+    current.activeSummaries = [];
+    current.activeItems = [];
+    save();
+    return 'Cleared active context';
+  }
+
+  function truncateFrom(i: number): void {
+    if (!Number.isInteger(i) || i < 0) return;
+    const index = loadIndex().filter((entry) => entry.i < i);
+    const poolEntries = loadPool().filter((entry) =>
+      typeof entry.i === 'number' ? entry.i < i : true
+    );
+    writeJsonl(indexPath, index);
+    writeJsonl(poolPath, poolEntries);
+    current.activeItems = current.activeItems.filter((item) => item.i < i);
+    current.recalled = current.recalled.filter((item) =>
+      typeof item.i === 'number' ? item.i < i : true
+    );
+    save();
+  }
+
   function pin(text: string): string {
     const value = safeText(text, MAX_PIN);
     if (!value) return 'usage: /context pin <text>';
@@ -721,6 +781,11 @@ export function createContextManager(
     pin,
     search,
     recall,
+    active,
+    pool,
+    drop,
+    clearActive,
+    truncateFrom,
     applyPatch,
     archive,
     recordMessages,

@@ -404,10 +404,12 @@ export async function createAgent(
     );
   }
 
-  function persistPending(): void {
+  const rootTranscriptAnchors: number[] = [];
+
+  function persistPending(): ReturnType<typeof contextManager.recordMessages> {
     if (!sessionStore || !sessionId) {
       store.markPersisted();
-      return;
+      return [];
     }
     const pending = store.getPendingForPersist();
     const persisted: ChatCompletionMessageParam[] = [];
@@ -419,8 +421,9 @@ export async function createAgent(
         /* ignore persist failures */
       }
     }
-    contextManager.recordMessages(persisted);
+    const indexed = contextManager.recordMessages(persisted);
     store.markPersisted();
+    return indexed;
   }
 
   const stack = createTaskStack();
@@ -542,7 +545,11 @@ export async function createAgent(
       openingContent = rootUserMessage as unknown as ChatCompletionUserMessageParam['content'];
     }
     store.appendUser(openingContent as any, { rootTurn: !task.parentId });
-    persistPending();
+    const openingIndexed = persistPending();
+    if (!task.parentId) {
+      const rootEntry = openingIndexed.find((entry) => entry.role === 'user');
+      if (rootEntry) rootTranscriptAnchors.push(rootEntry.i);
+    }
 
     let finalText = '';
     let emptyArgsRetries = 0;
@@ -877,6 +884,7 @@ export async function createAgent(
     store.reset(systemPrompt);
     stack.clear();
     taskArchive.clear();
+    rootTranscriptAnchors.length = 0;
   }
 
   function getTaskStack(): TaskStack {
@@ -894,9 +902,22 @@ export async function createAgent(
   }
 
   function revertLastTurnContextOnly(): number {
+    const transcriptAnchor = rootTranscriptAnchors.pop();
     const removed = store.revertLastRootTurn();
     if (removed > 0) {
+      if (sessionStore && sessionId && transcriptAnchor !== undefined) {
+        try {
+          sessionStore.truncate(sessionId, transcriptAnchor);
+        } catch {
+          /* ignore persist failures */
+        }
+      }
+      if (transcriptAnchor !== undefined) {
+        contextManager.truncateFrom(transcriptAnchor);
+      }
       stack.clear();
+    } else if (transcriptAnchor !== undefined) {
+      rootTranscriptAnchors.push(transcriptAnchor);
     }
     return removed;
   }
@@ -924,6 +945,22 @@ export async function createAgent(
     return contextManager.pin(text);
   }
 
+  function activeContext() {
+    return contextManager.active();
+  }
+
+  function poolContext(limit?: number) {
+    return contextManager.pool(limit);
+  }
+
+  function dropContext(i: number): string {
+    return contextManager.drop(i);
+  }
+
+  function clearActiveContext(): string {
+    return contextManager.clearActive();
+  }
+
   return {
     chat,
     reset,
@@ -937,6 +974,10 @@ export async function createAgent(
     searchContext,
     recallContext,
     pinContext,
+    activeContext,
+    poolContext,
+    dropContext,
+    clearActiveContext,
   };
 }
 
