@@ -71,3 +71,59 @@ test('context manager: applies hidden next-context patch safely', () => {
   assert.match(inspect, /Session pool entries: 1/);
 });
 
+test('context manager: records monotonic transcript ids and applies id-based ops', () => {
+  const dir = mktmp('ma-context-');
+  const ctx = createContextManager('s_indexed_0000', dir);
+
+  const entries = ctx.recordMessages([
+    { role: 'user', content: 'Do not mutate this user message' },
+    { role: 'assistant', content: 'Old assistant assumption that can be summarized' },
+    { role: 'tool', tool_call_id: 'tc_1', content: 'Tool result can leave active context' },
+  ]);
+
+  assert.deepEqual(entries.map((entry) => entry.i), [0, 1, 2]);
+  assert.equal(entries[0].immutable, true);
+  assert.equal(entries[1].immutable, false);
+
+  ctx.applyPatch(JSON.stringify({
+    ops: [
+      { i: 0, act: 'edit', res: 'malicious user edit should be ignored' },
+      { i: 1, act: 'edit', res: 'Assistant assumption summarized', reason: 'reduce noise' },
+      { i: 2, act: 'rm', reason: 'tool result no longer needed' },
+    ],
+  }));
+
+  const state = ctx.state();
+  const userItem = state.activeItems.find((item) => item.i === 0);
+  const assistantItem = state.activeItems.find((item) => item.i === 1);
+  const toolItem = state.activeItems.find((item) => item.i === 2);
+
+  assert.equal(userItem?.mode, 'protected');
+  assert.equal(userItem?.content, undefined);
+  assert.equal(assistantItem?.mode, 'summary');
+  assert.equal(assistantItem?.content, 'Assistant assumption summarized');
+  assert.equal(toolItem, undefined);
+
+  const results = ctx.search('tool result');
+  assert.ok(results.some((entry) => entry.i === 2));
+  assert.match(ctx.recall('2'), /Recalled/);
+  assert.equal(ctx.state().activeItems.find((item) => item.i === 2)?.i, 2);
+});
+
+test('context manager: ensureIndexed backfills old sessions once', () => {
+  const dir = mktmp('ma-context-');
+  const ctx = createContextManager('s_resume_0000', dir);
+
+  ctx.ensureIndexed([
+    { role: 'user', content: 'first old message' },
+    { role: 'assistant', content: 'first old response' },
+  ]);
+  ctx.ensureIndexed([
+    { role: 'user', content: 'should not be duplicated' },
+  ]);
+
+  const inspect = ctx.inspect();
+  assert.match(inspect, /Transcript index entries: 2/);
+  assert.match(inspect, /\[i=0 role=user mode=protected\]/);
+  assert.match(inspect, /\[i=1 role=assistant mode=raw\]/);
+});

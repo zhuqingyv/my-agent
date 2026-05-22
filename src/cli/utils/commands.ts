@@ -111,7 +111,8 @@ commands.set('/context', {
       return results
         .map((entry, idx) => {
           const text = (entry.summary || entry.text).replace(/\s+/g, ' ').slice(0, 240);
-          return `${idx + 1}. ${entry.id} [${entry.role}] ${text}`;
+          const label = typeof entry.i === 'number' ? `i=${entry.i}` : entry.id;
+          return `${idx + 1}. ${label} [${entry.role}] ${text}`;
         })
         .join('\n');
     }

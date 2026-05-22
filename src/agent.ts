@@ -398,19 +398,28 @@ export async function createAgent(
     sessionId,
     sessionStore?.getSessionDir()
   );
+  if (options.resumeMessages) {
+    contextManager.ensureIndexed(
+      options.resumeMessages.filter((m) => m.role !== 'system')
+    );
+  }
 
   function persistPending(): void {
     if (!sessionStore || !sessionId) {
       store.markPersisted();
       return;
     }
-    for (const m of store.getPendingForPersist()) {
+    const pending = store.getPendingForPersist();
+    const persisted: ChatCompletionMessageParam[] = [];
+    for (const m of pending) {
       try {
         sessionStore.append(sessionId, m);
+        persisted.push(m);
       } catch {
         /* ignore persist failures */
       }
     }
+    contextManager.recordMessages(persisted);
     store.markPersisted();
   }
 
