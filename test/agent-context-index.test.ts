@@ -32,6 +32,23 @@ function installOpenAiMock(content: string, calls?: any[]) {
   };
 }
 
+function installOpenAiMockTurns(turns: any[], calls?: any[]) {
+  const proto = findCompletionsPrototype();
+  const original = proto.create;
+  proto.create = function patched(body: any) {
+    if (body.stream !== true) throw new Error('expected streaming chat call');
+    calls?.push(body);
+    const chunks = turns.shift();
+    if (!chunks) throw new Error('mock OpenAI: no turn queued');
+    return Promise.resolve((async function* () {
+      for (const chunk of chunks) yield chunk;
+    })() as any);
+  };
+  return () => {
+    proto.create = original;
+  };
+}
+
 async function drain(gen: AsyncGenerator<AgentEvent, void, unknown>): Promise<void> {
   for await (const _event of gen) {
     // drain
@@ -55,9 +72,7 @@ test('agent chat writes monotonic transcript index sidecar for visible messages'
     cwd: process.cwd(),
     model: 'stub-model',
   });
-  const restore = installOpenAiMock(
-    'visible answer\n<ma_context_patch>{"ops":[]}</ma_context_patch>'
-  );
+  const restore = installOpenAiMock('visible answer');
   try {
     const agent = await createAgent(config, [], { sessionStore, sessionId });
     await drain(agent.chat('hello indexed context'));
@@ -100,10 +115,7 @@ test('agent chat sends context-manager active context, not full transcript', asy
   ]);
 
   const calls: any[] = [];
-  const restore = installOpenAiMock(
-    'visible answer\n<ma_context_patch>{"ops":[]}</ma_context_patch>',
-    calls
-  );
+  const restore = installOpenAiMock('visible answer', calls);
   try {
     const agent = await createAgent(config, [], {
       resumeMessages: oldMessages,
@@ -119,6 +131,73 @@ test('agent chat sends context-manager active context, not full transcript', asy
     assert.match(requestText, /new task/);
     assert.doesNotMatch(requestText, /old task that should stay out of request/);
     assert.doesNotMatch(requestText, /cold noisy assistant history/);
+  } finally {
+    restore();
+  }
+});
+
+test('agent chat applies context_update tool instead of XML tail patch', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ma-agent-context-tool-'));
+  const sessionStore = createSessionStore(dir);
+  const sessionId = sessionStore.create({
+    createdAt: Date.now(),
+    cwd: process.cwd(),
+    model: 'stub-model',
+  });
+  const oldMessages = [
+    { role: 'assistant', content: 'verbose tool evidence that should be compressed' },
+  ] as any[];
+  for (const msg of oldMessages) sessionStore.append(sessionId, msg);
+  const contextManager = createContextManager(sessionId, dir);
+  contextManager.ensureIndexed(oldMessages);
+
+  const calls: any[] = [];
+  const restore = installOpenAiMockTurns([
+    [
+      {
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: 'ctx_update_1',
+              function: {
+                name: 'context_update',
+                arguments: JSON.stringify({
+                  ops: [{
+                    i: 0,
+                    act: 'edit',
+                    res: 'compressed evidence summary',
+                    reason: 'reduce active context',
+                  }],
+                }),
+              },
+            }],
+          },
+        }],
+      },
+    ],
+    [{ choices: [{ delta: { content: 'final answer' } }] }],
+  ], calls);
+  try {
+    const agent = await createAgent(config, [], {
+      resumeMessages: oldMessages,
+      sessionStore,
+      sessionId,
+    });
+    await drain(agent.chat('new task'));
+
+    assert.ok(
+      calls[0].tools.some((tool: any) => tool.function?.name === 'context_update'),
+      'context_update must be exposed as a builtin tool'
+    );
+    const state = JSON.parse(fs.readFileSync(path.join(dir, `${sessionId}.context.json`), 'utf-8'));
+    const item = state.activeItems.find((active: any) => active.i === 0);
+    assert.equal(item.mode, 'summary');
+    assert.equal(item.content, 'compressed evidence summary');
+    const pool = fs.readFileSync(path.join(dir, `${sessionId}.pool.jsonl`), 'utf-8');
+    assert.match(pool, /verbose tool evidence/);
+    const audit = fs.readFileSync(path.join(dir, `${sessionId}.patch.jsonl`), 'utf-8');
+    assert.match(audit, /"act":"edit"/);
   } finally {
     restore();
   }

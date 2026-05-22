@@ -9,7 +9,7 @@ async function* chunks(parts: string[]) {
   }
 }
 
-test('stream parser: streams visible text and hides tail context patch', async () => {
+test('stream parser: treats old XML patch text as visible text', async () => {
   const parser = new StreamParser();
   const events: AgentEvent[] = [];
   const gen = parser.parse(chunks([
@@ -34,13 +34,12 @@ test('stream parser: streams visible text and hides tail context patch', async (
       .filter((event): event is Extract<AgentEvent, { type: 'token' }> => event.type === 'token')
       .map((event) => event.text)
       .join(''),
-    'Visible answer continues.\n'
+    'Visible answer continues.\n<ma_context_patch>\n{"ops":[]}\n</ma_context_patch>'
   );
-  assert.equal(result.content, 'Visible answer continues.\n');
-  assert.equal(result.contextPatch, '{"ops":[]}');
+  assert.equal(result.content, 'Visible answer continues.\n<ma_context_patch>\n{"ops":[]}\n</ma_context_patch>');
 });
 
-test('stream parser: detects split context patch delimiter without leaking it', async () => {
+test('stream parser: does not special-case split XML patch delimiters', async () => {
   const parser = new StreamParser();
   const events: AgentEvent[] = [];
   const gen = parser.parse(chunks([
@@ -63,7 +62,6 @@ test('stream parser: detects split context patch delimiter without leaking it', 
     .filter((event): event is Extract<AgentEvent, { type: 'token' }> => event.type === 'token')
     .map((event) => event.text)
     .join('');
-  assert.equal(visible, 'Answer\n');
-  assert.equal(result.content, 'Answer\n');
-  assert.equal(result.contextPatch, '{"ops":[]}');
+  assert.equal(visible, 'Answer\n<ma_context_patch>{"ops":[]}</ma_context_patch>');
+  assert.equal(result.content, 'Answer\n<ma_context_patch>{"ops":[]}</ma_context_patch>');
 });

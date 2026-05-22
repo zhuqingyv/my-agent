@@ -8,6 +8,7 @@ import { classifyCommand, isWhitelisted } from './dangerGuard.js';
 import { routeToolCall, findToolSchema } from './tool-router.js';
 import { createTodoList } from './todo.js';
 import { parseToolResultDiff } from './diff-artifact.js';
+import type { ContextManager } from './context-manager.js';
 
 const DANGER_EXEC_TOOLS = new Set<string>([
   'exec-mcp__execute_command',
@@ -34,6 +35,7 @@ export interface BuiltinToolContext {
   stack: TaskStack;
   currentTask: Task;
   todoList: ReturnType<typeof createTodoList>;
+  contextManager: ContextManager;
 }
 
 export interface BuiltinTool {
@@ -48,6 +50,7 @@ export interface ToolExecutionContext {
   stack: TaskStack;
   currentTask: Task;
   todoList: ReturnType<typeof createTodoList>;
+  contextManager: ContextManager;
 }
 
 export interface ConfirmProvider {

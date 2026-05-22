@@ -32,7 +32,7 @@ test('context manager: persists pins, pool entries, search, and recall', () => {
   assert.match(prompt, /Recall results need filtering/);
 });
 
-test('context manager: applies hidden next-context patch safely', () => {
+test('context manager: applies ops patch safely', () => {
   const dir = mktmp('ma-context-');
   const ctx = createContextManager('s_test_0001', dir);
 

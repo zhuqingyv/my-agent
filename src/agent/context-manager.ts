@@ -3,9 +3,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
-export const CONTEXT_PATCH_OPEN = '<ma_context_patch>';
-export const CONTEXT_PATCH_CLOSE = '</ma_context_patch>';
-
 export interface ContextPatch {
   ops?: ContextOp[];
 }
@@ -786,7 +783,7 @@ export function createContextManager(
       }
     }
     lines.push(
-      'At the end of your final visible response, emit a hidden JSON patch between <ma_context_patch> and </ma_context_patch>. The patch must use the single ops protocol: {"ops":[{"i":102,"act":"rm|edit|protect|keep","res":"only for edit","reason":"..."},{"act":"search","q":"...","reason":"..."}]}. Message i values are stable original transcript IDs. Do not edit user messages or system prompts. If no context change is needed, emit {"ops":[]}.'
+      'Active context is read-only evidence. Do not copy indexed context markers such as [tool result i=...] into the visible answer. To change active context, call the context_update tool with ops; never emit XML or raw JSON patches in the answer.'
     );
     return lines.join('\n');
   }
@@ -803,7 +800,7 @@ export function createContextManager(
       for (const pin of current.pins.slice(0, 8)) lines.push(`- ${pin}`);
     }
     lines.push(
-      'Your visible answer should solve the user task. At the end of your final visible response, emit a hidden JSON patch between <ma_context_patch> and </ma_context_patch>. The patch must use this exact single protocol: {"ops":[{"i":102,"act":"rm|edit|protect|keep","res":"only for edit","reason":"..."},{"act":"search","q":"...","reason":"..."}]}. Do not emit activeTask, hygiene, archiveToPool, recallFromPool, admitRecall, rejectRecall, or pin in the patch. Message i values are stable original transcript IDs. Do not edit user messages or system prompts. If no context change is needed, emit {"ops":[]}.'
+      'Active context items are read-only evidence for solving the user task. Do not copy [tool result i=...] or [i=...] markers into the visible answer. If you need to remove, compress, protect, keep, or search session context, call the context_update tool. Do not emit XML tags or raw JSON patches in visible text.'
     );
     return lines.join('\n');
   }

@@ -39,7 +39,11 @@ import {
   diffWorkspaceSnapshots,
 } from './agent/workspace-diff.js';
 import type { SessionStore } from './session/store.js';
-import { createContextManager } from './agent/context-manager.js';
+import {
+  createContextManager,
+  type ContextManager,
+  type ContextOp,
+} from './agent/context-manager.js';
 
 export interface CreateAgentOptions {
   resumeMessages?: ChatCompletionMessageParam[];
@@ -65,6 +69,15 @@ function extractCommand(args: Record<string, any>): string {
 function isTtyInteractive(): boolean {
   return Boolean((process.stdin as any)?.isTTY);
 }
+
+function looksLikeContextEcho(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/^\[tool result i=\d+\]/.test(trimmed)) return true;
+  const markerCount = (trimmed.match(/\[(?:tool result )?i=\d+/g) ?? []).length;
+  return markerCount >= 2 && trimmed.length < 2000;
+}
+
 const DEFAULT_CONTEXT_WINDOW = 32768;
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 const COMPACT_TRIGGER_RATIO = 0.75;
@@ -152,6 +165,7 @@ interface BuiltinToolContext {
   stack: TaskStack;
   currentTask: Task;
   todoList: ReturnType<typeof createTodoList>;
+  contextManager: ContextManager;
 }
 
 interface BuiltinTool {
@@ -303,6 +317,72 @@ builtinTools.set('enter_plan_mode', {
     if (!plan) return { content: 'Error: plan is required', isError: true };
     return {
       content: `${PLAN_OPEN}${plan}\n[/plan]\n\n等待用户确认...`,
+      isError: false,
+    };
+  },
+});
+
+builtinTools.set('context_update', {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'context_update',
+      description:
+        'Update MA active context by stable index. Use this instead of emitting XML or JSON patches. User messages are immutable.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ops: {
+            type: 'array',
+            description: 'Context operations to apply.',
+            items: {
+              type: 'object',
+              properties: {
+                i: { type: 'number', description: 'Stable context index for keep/rm/edit/protect.' },
+                act: {
+                  type: 'string',
+                  enum: ['keep', 'rm', 'edit', 'protect', 'search'],
+                  description: 'Operation: rm moves to pool; edit replaces active item with res and archives original.',
+                },
+                res: { type: 'string', description: 'Required for edit: compressed replacement content.' },
+                q: { type: 'string', description: 'Required for search: pool search query.' },
+                reason: { type: 'string', description: 'Why this context update is needed.' },
+              },
+              required: ['act'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['ops'],
+        additionalProperties: false,
+      },
+    },
+  },
+  handler: (args, ctx) => {
+    const ops = Array.isArray(args.ops) ? args.ops : null;
+    if (!ops) {
+      return { content: 'Error: context_update requires ops array', isError: true };
+    }
+    const normalized: ContextOp[] = ops.map((op: any) => ({
+      ...(Number.isInteger(op?.i) ? { i: op.i } : {}),
+      ...(typeof op?.act === 'string' ? { act: op.act } : {}),
+      ...(typeof op?.res === 'string' ? { res: op.res } : {}),
+      ...(typeof op?.q === 'string' ? { q: op.q } : {}),
+      ...(typeof op?.reason === 'string' ? { reason: op.reason } : {}),
+    })) as ContextOp[];
+    const beforeActive = ctx.contextManager.active().length;
+    const beforePool = ctx.contextManager.pool(100000).length;
+    ctx.contextManager.applyPatch(JSON.stringify({ ops: normalized }));
+    const afterActive = ctx.contextManager.active().length;
+    const afterPool = ctx.contextManager.pool(100000).length;
+    return {
+      content: JSON.stringify({
+        ok: true,
+        applied: normalized.length,
+        activeBefore: beforeActive,
+        activeAfter: afterActive,
+        poolDelta: afterPool - beforePool,
+      }),
       isError: false,
     };
   },
@@ -712,8 +792,14 @@ export async function createAgent(
           persistPending();
           continue; // one more loop to get actual answer
         }
+        if (looksLikeContextEcho(contentBuf)) {
+          store.appendUser(
+            'Your previous response copied active context markers instead of answering. Do not repeat [tool result i=...] or [i=...] text. If context should change, call context_update. Otherwise answer the user directly from the evidence.'
+          );
+          persistPending();
+          continue;
+        }
         store.appendAssistant(contentBuf, undefined, { reasoningContent });
-        contextManager.applyPatch(parsedTurn.contextPatch);
         persistPending();
         finalText = contentBuf;
         return { text: finalText, hitMaxLoops: false };
@@ -776,7 +862,7 @@ export async function createAgent(
       emptyArgsRetries = 0;
       tempOverride = undefined;
 
-      const toolCtx = { stack, currentTask: task, todoList };
+      const toolCtx = { stack, currentTask: task, todoList, contextManager };
 
       for (const tc of toolCalls) {
         const fullName = tc.function.name;
