@@ -575,7 +575,7 @@ export async function createAgent(
         loopWarning,
       ].filter(Boolean).join('\n\n');
       const requestMessages = providerCodec.encodeMessages(
-        store.buildActiveRequestMessages(suffix)
+        store.buildRequestMessages(suffix)
       );
 
       const request: Parameters<typeof client.chat.completions.create>[0] = {
@@ -653,7 +653,7 @@ export async function createAgent(
             renderStackState(stack),
           ].filter(Boolean).join('\n\n');
           request.messages = providerCodec.encodeMessages(
-            store.buildActiveRequestMessages(stateStr2)
+            store.buildRequestMessages(stateStr2)
           );
           stream = await client.chat.completions.create(
             { ...request, stream: true },

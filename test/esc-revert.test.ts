@@ -71,7 +71,7 @@ test('message store: revertLastTurn returns 0 when there is no user turn', () =>
   );
 });
 
-test('message store: active request builder keeps bounded tail and latest prior user', () => {
+test('message store: request builder keeps full transcript and suffix', () => {
   const store = new MessageStore();
   store.init('sys');
   store.appendUser('original task');
@@ -81,55 +81,17 @@ test('message store: active request builder keeps bounded tail and latest prior 
   store.appendAssistant('recent answer 1');
   store.appendAssistant('recent answer 2');
 
-  const request = store.buildActiveRequestMessages('[active context]', { tailMessages: 4 });
+  const request = store.buildRequestMessages('[active context]');
 
   assert.equal(request[0].role, 'system');
   assert.match(String(request[0].content), /\[active context\]/);
   assert.ok(
     request.some((m) => m.role === 'user' && m.content === 'original task'),
-    'bounded request must retain at least one user message'
+    'request must retain the original user message'
   );
-  assert.equal(
+  assert.ok(
     request.some((m) => m.role === 'assistant' && m.content === 'old answer 0'),
-    false
-  );
-});
-
-test('message store: active request builder expands tail start to keep tool pair', () => {
-  const store = new MessageStore();
-  store.init('sys');
-  store.appendUser('run tool');
-  store.appendAssistant('', [
-    { id: 'tc_1', type: 'function', function: { name: 'read', arguments: '{}' } },
-  ]);
-  store.appendToolResult('tc_1', 'tool result');
-  store.appendAssistant('final');
-
-  const request = store.buildActiveRequestMessages('[active context]', { tailMessages: 2 });
-
-  assert.ok(
-    request.some((m: any) => m.role === 'assistant' && m.tool_calls?.[0]?.id === 'tc_1'),
-    'assistant tool_call should be included with leading tool result'
-  );
-  assert.ok(
-    request.some((m: any) => m.role === 'tool' && m.tool_call_id === 'tc_1'),
-    'tool result should be included with assistant tool_call'
-  );
-});
-
-test('message store: active request builder drops incomplete raw tool pairs', () => {
-  const store = new MessageStore();
-  store.init('sys');
-  store.appendUser('run tool');
-  store.appendAssistant('', [
-    { id: 'tc_missing', type: 'function', function: { name: 'read', arguments: '{}' } },
-  ]);
-
-  const request = store.buildActiveRequestMessages('[active context]', { tailMessages: 4 });
-
-  assert.equal(
-    request.some((m: any) => Array.isArray(m.tool_calls) && m.tool_calls.length > 0),
-    false
+    'request must not silently tail-slice old transcript messages'
   );
 });
 
