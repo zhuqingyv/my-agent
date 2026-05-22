@@ -5,10 +5,10 @@ DeepSeek 无脑配置，本地小模型也能变生产力。
 
 MA 的核心不是“又接了一个模型”，而是两件事：远程模型配置必须无脑，本地小模型必须能做真实项目。DeepSeek 走交互式配置，LM Studio/Qwen 则通过长上下文、工具调用加固、模型切换和 benchmark 驱动修复，把小模型转化成能持续工作的生产力。
 
-`v0.1.1-alpha` 当前支持 LM Studio 本地模型和 DeepSeek 官方 API。后续会继续扩展 GLM、Qwen、Kimi、MiniMax 等 OpenAI-compatible provider。
+`v0.1.2-alpha` 当前支持 LM Studio 本地模型和 DeepSeek 官方 API。后续会继续扩展 GLM、Qwen、Kimi、MiniMax 等 OpenAI-compatible provider。
 
 官网：https://zhuqingyv.github.io/my-agent/  
-发布页：https://github.com/zhuqingyv/my-agent/releases/tag/v0.1.1-alpha
+发布页：https://github.com/zhuqingyv/my-agent/releases/tag/v0.1.2-alpha
 
 ![MA 终端界面预览](website/assets/tui-preview.svg)
 

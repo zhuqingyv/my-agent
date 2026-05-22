@@ -6,10 +6,10 @@ DeepSeek in minutes. Local small models turned into real productivity.
 
 MA is a terminal coding agent built around two practical promises: remote setup should be brainless, and local small models should become useful production tools. DeepSeek config is interactive and direct. LM Studio/Qwen gets long-context handling, tool hardening, model switching, and benchmark-driven fixes so small models can do real repo work.
 
-`v0.1.1-alpha` supports LM Studio local models and DeepSeek official API today. More OpenAI-compatible providers are next.
+`v0.1.2-alpha` supports LM Studio local models and DeepSeek official API today. More OpenAI-compatible providers are next.
 
 Website: https://zhuqingyv.github.io/my-agent/  
-Release: https://github.com/zhuqingyv/my-agent/releases/tag/v0.1.1-alpha
+Release: https://github.com/zhuqingyv/my-agent/releases/tag/v0.1.2-alpha
 
 ![MA terminal UI preview](website/assets/tui-preview.svg)
 

@@ -16,6 +16,7 @@ import type { BootstrapResult } from '../index.js';
 import type { McpConnection } from '../mcp/types.js';
 import { App } from './App.js';
 import { VERSION } from './version.js';
+import { assertInteractiveInput, TerminalInputError } from './terminal.js';
 
 let activeConnections: McpConnection[] = [];
 
@@ -48,6 +49,8 @@ function writeGlobalConfigJson(config: Record<string, any>): void {
 }
 
 async function runChat(configPath: string | undefined, runOpts: RunChatOptions): Promise<void> {
+  assertInteractiveInput();
+
   const { debug } = runOpts;
   let resume = runOpts.resume;
   if (debug) {
@@ -313,7 +316,8 @@ async function main(): Promise<void> {
 }
 
 main().catch(async (err) => {
-  console.error(pc.red(`[fatal] ${(err as Error).stack ?? (err as Error).message}`));
+  const error = err as Error;
+  console.error(pc.red(`[fatal] ${error instanceof TerminalInputError ? error.message : error.stack ?? error.message}`));
   try {
     await shutdown(activeConnections);
   } catch {
