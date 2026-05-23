@@ -51,6 +51,7 @@ export interface ToolExecutionContext {
   currentTask: Task;
   todoList: ReturnType<typeof createTodoList>;
   contextManager: ContextManager;
+  sessionId?: string;
 }
 
 export interface ConfirmProvider {
@@ -116,9 +117,19 @@ export class ToolExecutor {
     }
 
     if (!skipExecute && DANGER_EXEC_TOOLS.has(fullName)) {
-      const cmd = extractCommand(args);
+      let cmd = extractCommand(args);
       const mode = this.config.danger?.mode ?? 'confirm';
-      if (cmd && mode !== 'off') {
+
+      // Proxy: auto-inject --session for ma ctx / ma say commands
+      const MA_INTERNAL_RE = /^ma\s+(?:ctx|say)\b/;
+      if (MA_INTERNAL_RE.test(cmd) && ctx.sessionId) {
+        if (!/\s--session\b/.test(cmd)) {
+          cmd = cmd.trimEnd() + ` --session ${ctx.sessionId}`;
+          if (typeof args.command === 'string') args.command = cmd;
+          if (typeof args.cmd === 'string') args.cmd = cmd;
+        }
+        // ma ctx / ma say commands are not dangerous, skip confirm
+      } else if (cmd && mode !== 'off') {
         const allow = this.config.danger?.allow;
         const result = classifyCommand(cmd);
         if (result.dangerous && !isWhitelisted(cmd, allow)) {

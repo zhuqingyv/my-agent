@@ -15,7 +15,7 @@ const DEFAULT_MODEL: ModelConfig = {
   presencePenalty: 0,
   frequencyPenalty: 0,
   repeatPenalty: 1,
-  maxTokens: 4096,
+
 };
 
 export function globalConfigDir(): string {

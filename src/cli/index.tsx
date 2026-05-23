@@ -18,6 +18,7 @@ import { App } from './App.js';
 import { VERSION } from './version.js';
 import { assertInteractiveInput, TerminalInputError } from './terminal.js';
 import { runContextWatch } from './watch.js';
+import { createContextManager } from '../agent/context-manager.js';
 
 let activeConnections: McpConnection[] = [];
 
@@ -188,6 +189,133 @@ async function main(): Promise<void> {
         host: opts.host,
         sid: sessionId,
       });
+    });
+
+  const ctx = program
+    .command('ctx')
+    .description('Manage MA active context');
+
+  ctx
+    .command('list')
+    .description('List active context items')
+    .option('--session <id>', 'session id')
+    .action((opts: { session?: string }) => {
+      const sid = opts.session;
+      if (!sid) {
+        console.error(pc.red('--session is required when running outside agent'));
+        process.exit(1);
+      }
+      const store = createSessionStore();
+      const cm = createContextManager(sid, store.getSessionDir());
+      const items = cm.active();
+      if (items.length === 0) {
+        console.log(pc.dim('empty'));
+        return;
+      }
+      for (const item of items) {
+        const summary = (item.content || '').replace(/\s+/g, ' ').slice(0, 100);
+        console.log(`${pc.cyan(`i=${item.i}`)} ${pc.dim(item.role)} ${pc.dim(item.mode)} ${summary}`);
+      }
+    });
+
+  ctx
+    .command('rm')
+    .description('Remove an active context item (moves to pool)')
+    .argument('<i>', 'context index')
+    .option('--session <id>', 'session id')
+    .action((i: string, opts: { session?: string }) => {
+      const sid = opts.session;
+      if (!sid) {
+        console.error(pc.red('--session is required when running outside agent'));
+        process.exit(1);
+      }
+      const store = createSessionStore();
+      const cm = createContextManager(sid, store.getSessionDir());
+      const result = cm.drop(Number.parseInt(i, 10));
+      console.log(result);
+    });
+
+  ctx
+    .command('search')
+    .description('Search session pool')
+    .argument('<query>', 'search query')
+    .option('--session <id>', 'session id')
+    .action((query: string, opts: { session?: string }) => {
+      const sid = opts.session;
+      if (!sid) {
+        console.error(pc.red('--session is required when running outside agent'));
+        process.exit(1);
+      }
+      const store = createSessionStore();
+      const cm = createContextManager(sid, store.getSessionDir());
+      const results = cm.search(query);
+      if (results.length === 0) {
+        console.log(pc.dim('no results'));
+        return;
+      }
+      for (const entry of results) {
+        const snippet = (entry.summary || entry.text).replace(/\s+/g, ' ').slice(0, 120);
+        console.log(`${pc.cyan(entry.id)} ${pc.dim(`i=${entry.i}`)} ${snippet}`);
+      }
+    });
+
+  ctx
+    .command('recall')
+    .description('Recall an entry from pool to active context')
+    .argument('<id>', 'pool entry id or index')
+    .option('--session <id>', 'session id')
+    .action((id: string, opts: { session?: string }) => {
+      const sid = opts.session;
+      if (!sid) {
+        console.error(pc.red('--session is required when running outside agent'));
+        process.exit(1);
+      }
+      const store = createSessionStore();
+      const cm = createContextManager(sid, store.getSessionDir());
+      const result = cm.recall(id);
+      console.log(result);
+    });
+
+  ctx
+    .command('pin')
+    .description('Pin text into active context')
+    .argument('<text>', 'text to pin')
+    .option('--session <id>', 'session id')
+    .action((text: string, opts: { session?: string }) => {
+      const sid = opts.session;
+      if (!sid) {
+        console.error(pc.red('--session is required when running outside agent'));
+        process.exit(1);
+      }
+      const store = createSessionStore();
+      const cm = createContextManager(sid, store.getSessionDir());
+      const result = cm.pin(text);
+      console.log(result);
+    });
+
+  ctx
+    .command('say')
+    .description('Output text as a message (for parallel tool calls)')
+    .argument('<text>', 'text to output')
+    .option('--session <id>', 'session id')
+    .action((text: string, _opts: { session?: string }) => {
+      console.log(text);
+    });
+
+  ctx
+    .command('clear')
+    .description('Clear all active context')
+    .option('--session <id>', 'session id')
+    .action((opts: { session?: string }) => {
+      const sid = opts.session;
+      if (!sid) {
+        console.error(pc.red('--session is required when running outside agent'));
+        process.exit(1);
+      }
+      const store = createSessionStore();
+      const cm = createContextManager(sid, store.getSessionDir());
+      const result = cm.clearActive();
+      console.log(result);
     });
 
   program

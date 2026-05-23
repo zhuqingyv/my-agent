@@ -34,4 +34,5 @@ export type AgentEvent =
   | { type: 'compact:done'; freed: number }
   | { type: 'ask_user'; question: string }
   | { type: 'plan'; content: string }
-  | { type: 'aborted' };
+  | { type: 'aborted' }
+  | { type: 'warning'; message: string };

@@ -23,6 +23,7 @@ export interface TranscriptIndexEntry {
   turnId?: string;
   pairId?: string;
   pairIds?: string[];
+  toolCalls?: Array<{ id: string; name: string; arguments: string }>;
   immutable: boolean;
 }
 
@@ -368,6 +369,16 @@ export function createContextManager(
                 .map((toolCall: any) => toolCall?.id)
                 .filter((value: unknown): value is string => typeof value === 'string')
             : [];
+      const toolCalls =
+        Array.isArray(msg?.tool_calls)
+          ? msg.tool_calls
+              .filter((tc: any) => tc?.id && tc?.function?.name)
+              .map((tc: any) => ({
+                id: tc.id,
+                name: tc.function.name,
+                arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : '',
+              }))
+          : undefined;
       const entry: TranscriptIndexEntry = {
         i: next++,
         sessionId: id,
@@ -376,6 +387,7 @@ export function createContextManager(
         createdAt: Date.now(),
         pairId: pairIds[0],
         pairIds: pairIds.length > 0 ? pairIds : undefined,
+        toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
         immutable: role === 'user',
       };
       appendIndex(entry);
@@ -496,6 +508,15 @@ export function createContextManager(
 
   function drop(i: number): string {
     if (!Number.isInteger(i)) return 'usage: /context drop <i>';
+    const source = findIndexEntry(i);
+    if (source && !source.immutable) {
+      archive({
+        i,
+        role: source.role,
+        text: source.text,
+        archivedReason: 'demoted',
+      });
+    }
     const before = current.activeItems.length;
     current.activeItems = current.activeItems.filter((item) => item.i !== i);
     current.recalled = current.recalled.filter((item) => item.i !== i);
@@ -530,17 +551,32 @@ export function createContextManager(
       .sort((a, b) => a.i - b.i);
 
     for (const item of sorted) {
+      const source = index.find((entry) => entry.i === item.i);
       const content = activeItemContent(item, index);
+
+      // Assistant message with tool_calls but no text — keep for pairing
+      if (!content && source?.toolCalls?.length) {
+        out.push({
+          role: 'assistant',
+          content: null,
+          tool_calls: source.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: { name: tc.name, arguments: tc.arguments },
+          })),
+        } as any);
+        continue;
+      }
+
       if (!content) continue;
       if (item.role === 'user') {
         out.push({ role: 'user', content });
+      } else if (item.role === 'tool' && source?.pairId) {
+        out.push({ role: 'tool', tool_call_id: source.pairId, content } as any);
       } else {
         out.push({
           role: 'assistant',
-          content:
-            item.role === 'tool'
-              ? `[tool result i=${item.i}] ${content}`
-              : content,
+          content,
         });
       }
     }
@@ -783,7 +819,7 @@ export function createContextManager(
       }
     }
     lines.push(
-      'Active context is read-only evidence. Do not copy indexed context markers such as [tool result i=...] into the visible answer. To change active context, call the context_update tool with ops; never emit XML or raw JSON patches in the answer.'
+      'To manage context, use shell commands: ma ctx rm <i>, ma ctx search <q>, ma ctx recall <id>, ma ctx pin <text>, ma ctx clear.'
     );
     return lines.join('\n');
   }
@@ -800,7 +836,7 @@ export function createContextManager(
       for (const pin of current.pins.slice(0, 8)) lines.push(`- ${pin}`);
     }
     lines.push(
-      'Active context items are read-only evidence for solving the user task. Do not copy [tool result i=...] or [i=...] markers into the visible answer. If you need to remove, compress, protect, keep, or search session context, call the context_update tool. Do not emit XML tags or raw JSON patches in visible text.'
+      'To manage context, use: ma ctx rm <i>, ma ctx search <q>, ma ctx recall <id>.'
     );
     return lines.join('\n');
   }

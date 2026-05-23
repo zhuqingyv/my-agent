@@ -14,7 +14,7 @@ export interface BannerData {
 export type Message =
   | { kind: 'user'; id: string; text: string; images?: UiImage[] }
   | { kind: 'assistant'; id: string; markdown: string; elapsedMs: number }
-  | { kind: 'tool'; id: string; name: string; ok: boolean; preview: string; diff?: DiffData }
+  | { kind: 'tool'; id: string; name: string; ok: boolean; preview: string; path?: string; diff?: DiffData }
   | { kind: 'workspace-diff'; id: string; files: WorkspaceDiffFile[]; summary: string; truncated: boolean }
   | { kind: 'system'; id: string; text: string }
   | { kind: 'separator'; id: string; elapsed: string }
@@ -37,6 +37,7 @@ export interface ThinkingState {
   active: boolean;
   event: string;
   toolName: string | null;
+  toolPath?: string;
   startedAt: number;
   isThinking?: boolean;
   thoughtDurationMs?: number | null;

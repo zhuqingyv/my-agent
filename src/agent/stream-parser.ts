@@ -57,9 +57,14 @@ export class StreamParser {
     let isThinking = false;
     let thinkingViaReasoning = false;
     let thinkingStartTime = 0;
+    let finishReason: string | undefined;
 
     for await (const chunk of stream) {
-      const delta = chunk?.choices?.[0]?.delta;
+      const choice = chunk?.choices?.[0];
+      if (choice?.finish_reason) {
+        finishReason = choice.finish_reason;
+      }
+      const delta = choice?.delta;
       if (!delta) continue;
 
       // Handle reasoning_content field (Qwen/Gemma thinking mode)
@@ -179,6 +184,7 @@ export class StreamParser {
       content: contentBuf,
       toolCalls,
       reasoningContent: reasoningBuf || undefined,
+      finishReason,
     };
   }
 }

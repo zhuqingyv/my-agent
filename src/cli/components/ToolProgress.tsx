@@ -8,10 +8,11 @@ interface ToolProgressProps {
   name: string;
   ok: boolean;
   preview?: string;
+  path?: string;
   diff?: DiffData;
 }
 
-export function ToolProgress({ name, ok, preview, diff }: ToolProgressProps) {
+export function ToolProgress({ name, ok, preview, path, diff }: ToolProgressProps) {
   // 有 diff 数据时：显示摘要 + DiffBlock（自动折叠）
   if (ok && diff) {
     const totalChanges = diff.addedLines + diff.removedLines;
@@ -46,6 +47,9 @@ export function ToolProgress({ name, ok, preview, diff }: ToolProgressProps) {
       ) : (
         <Text color="red">✗ {preview || name}</Text>
       )}
+      {path ? (
+        <Text dimColor> {path}</Text>
+      ) : null}
     </Box>
   );
 }

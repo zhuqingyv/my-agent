@@ -4,6 +4,15 @@ import type { AgentEvent } from '../../agent/events.js';
 import type { UiStore } from '../state/store.js';
 import { makeToolResultPreview, parseToolResultDiff } from '../diff-parser.js';
 
+function extractToolPath(_name: string, args: Record<string, any>): string | undefined {
+  const path = args.path || args.file_path || args.filePath || args.dir_path || args.directory;
+  if (typeof path !== 'string' || !path.trim()) return undefined;
+  const p = path.trim();
+  if (p.length <= 60) return p;
+  const parts = p.split('/');
+  return '…/' + parts.slice(-2).join('/');
+}
+
 export interface PendingConfirm {
   requestId: string;
   cmd: string;
@@ -47,6 +56,7 @@ export function applyAgentEvent(
       store.updateThinking({
         event: `调用 ${event.name.replace('__', ' → ')}`,
         toolName: event.name.replace('__', ' → '),
+        toolPath: extractToolPath(event.name, event.args),
       });
       break;
     case 'tool:result': {
@@ -55,7 +65,8 @@ export function applyAgentEvent(
       if (pending.trim()) {
         store.pushMessage({ kind: 'assistant', id: nextId(), markdown: pending, elapsedMs: 0 });
       }
-      const toolName = store.getState().thinking?.toolName || '';
+      const thinking = store.getState().thinking;
+      const toolName = thinking?.toolName || '';
       if (event.ok && toolName === 'enter_plan_mode') {
         store.updateThinking({ event: '等待方案确认' });
         break;
@@ -64,13 +75,14 @@ export function applyAgentEvent(
       const diffData = event.ok
         ? event.artifact ?? parseToolResultDiff(event.content)
         : undefined;
-      
+
       store.pushMessage({
         kind: 'tool',
         id: nextId(),
         name: toolName,
         ok: event.ok,
         preview: preview || (event.ok ? '完成' : '失败'),
+        path: thinking?.toolPath,
         diff: diffData,
       });
       store.updateThinking({ event: event.ok ? '分析结果中' : '处理错误中' });
@@ -149,6 +161,9 @@ export function applyAgentEvent(
     case 'aborted':
       store.flushInFlight();
       store.pushMessage({ kind: 'system', id: nextId(), text: '[中断]' });
+      break;
+    case 'warning':
+      store.pushMessage({ kind: 'system', id: nextId(), text: `[警告] ${event.message}` });
       break;
     case 'thinking:start':
       store.updateThinking({ event: store.getState().thinking?.event || '思考中', isThinking: true });

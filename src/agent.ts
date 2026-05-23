@@ -42,7 +42,6 @@ import type { SessionStore } from './session/store.js';
 import {
   createContextManager,
   type ContextManager,
-  type ContextOp,
 } from './agent/context-manager.js';
 
 export interface CreateAgentOptions {
@@ -52,7 +51,7 @@ export interface CreateAgentOptions {
 }
 
 const TOOL_NAME_SEP = '__';
-const DEFAULT_MAX_LOOPS = 200;
+const DEFAULT_MAX_LOOPS = 500;
 const CREATE_TASK_TOOL_NAME = 'create_task';
 const DANGER_EXEC_TOOLS = new Set<string>([
   'exec-mcp__execute_command',
@@ -70,16 +69,8 @@ function isTtyInteractive(): boolean {
   return Boolean((process.stdin as any)?.isTTY);
 }
 
-function looksLikeContextEcho(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  if (/^\[tool result i=\d+\]/.test(trimmed)) return true;
-  const markerCount = (trimmed.match(/\[(?:tool result )?i=\d+/g) ?? []).length;
-  return markerCount >= 2 && trimmed.length < 2000;
-}
-
 const DEFAULT_CONTEXT_WINDOW = 32768;
-const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+
 const COMPACT_TRIGGER_RATIO = 0.75;
 const COMPACT_MAX_FAILURES = 2;
 const COMPACT_MIN_SUMMARY_CHARS = 50;
@@ -322,71 +313,6 @@ builtinTools.set('enter_plan_mode', {
   },
 });
 
-builtinTools.set('context_update', {
-  definition: {
-    type: 'function',
-    function: {
-      name: 'context_update',
-      description:
-        'Update MA active context by stable index. Use this instead of emitting XML or JSON patches. User messages are immutable.',
-      parameters: {
-        type: 'object',
-        properties: {
-          ops: {
-            type: 'array',
-            description: 'Context operations to apply.',
-            items: {
-              type: 'object',
-              properties: {
-                i: { type: 'number', description: 'Stable context index for keep/rm/edit/protect.' },
-                act: {
-                  type: 'string',
-                  enum: ['keep', 'rm', 'edit', 'protect', 'search'],
-                  description: 'Operation: rm moves to pool; edit replaces active item with res and archives original.',
-                },
-                res: { type: 'string', description: 'Required for edit: compressed replacement content.' },
-                q: { type: 'string', description: 'Required for search: pool search query.' },
-                reason: { type: 'string', description: 'Why this context update is needed.' },
-              },
-              required: ['act'],
-              additionalProperties: false,
-            },
-          },
-        },
-        required: ['ops'],
-        additionalProperties: false,
-      },
-    },
-  },
-  handler: (args, ctx) => {
-    const ops = Array.isArray(args.ops) ? args.ops : null;
-    if (!ops) {
-      return { content: 'Error: context_update requires ops array', isError: true };
-    }
-    const normalized: ContextOp[] = ops.map((op: any) => ({
-      ...(Number.isInteger(op?.i) ? { i: op.i } : {}),
-      ...(typeof op?.act === 'string' ? { act: op.act } : {}),
-      ...(typeof op?.res === 'string' ? { res: op.res } : {}),
-      ...(typeof op?.q === 'string' ? { q: op.q } : {}),
-      ...(typeof op?.reason === 'string' ? { reason: op.reason } : {}),
-    })) as ContextOp[];
-    const beforeActive = ctx.contextManager.active().length;
-    const beforePool = ctx.contextManager.pool(100000).length;
-    ctx.contextManager.applyPatch(JSON.stringify({ ops: normalized }));
-    const afterActive = ctx.contextManager.active().length;
-    const afterPool = ctx.contextManager.pool(100000).length;
-    return {
-      content: JSON.stringify({
-        ok: true,
-        applied: normalized.length,
-        activeBefore: beforeActive,
-        activeAfter: afterActive,
-        poolDelta: afterPool - beforePool,
-      }),
-      isError: false,
-    };
-  },
-});
 
 function mcpToolsToOpenAI(connections: McpConnection[]): ChatCompletionTool[] {
   const out: ChatCompletionTool[] = [];
@@ -445,6 +371,7 @@ export async function createAgent(
       '- Always provide complete parameters: read_file needs path (e.g. ./package.json), list_directory uses . for cwd.',
       '- Call multiple independent tools in parallel for efficiency.',
       '- On tool error: read the error, try a different approach.',
+      '- Internal CLI: use execute_command to call ma ctx rm/search/recall/pin/clear to manage context, and ma say "text" to output messages in parallel with other tool calls.',
       '',
       '# Output style',
       '- After using tools, give a complete answer based on results. Never call tools then stay silent.',
@@ -665,8 +592,7 @@ export async function createAgent(
     signal?: AbortSignal
   ): AsyncGenerator<AgentEvent, { text: string; hitMaxLoops: boolean }, unknown> {
     const errorTracker = new ErrorTracker();
-    const effectiveMaxTokens =
-      config.model.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+    const effectiveMaxTokens = config.model.maxTokens;
     const streamParser = new StreamParser({
       maxContentChars: config.model.maxOutputChars,
       repeatWindowChars: config.model.repeatWindowChars,
@@ -724,7 +650,7 @@ export async function createAgent(
         ...(config.model.topP !== undefined ? { top_p: config.model.topP } : {}),
         ...(config.model.presencePenalty !== undefined ? { presence_penalty: config.model.presencePenalty } : {}),
         frequency_penalty: tempOverride !== undefined ? 0 : (config.model.frequencyPenalty ?? 1.1),
-        ...(effectiveMaxTokens > 0 ? { max_tokens: effectiveMaxTokens } : {}),
+        ...(effectiveMaxTokens != null && effectiveMaxTokens > 0 ? { max_tokens: effectiveMaxTokens } : {}),
       };
       const localModelParams: Record<string, unknown> = {};
       if (config.model.topK !== undefined) localModelParams.top_k = config.model.topK;
@@ -780,22 +706,23 @@ export async function createAgent(
       const parsedTurn = yield* streamParser.parse(
         stream
       );
-      const { content: contentBuf, toolCalls } = parsedTurn;
+      const { content: contentBuf, toolCalls, finishReason } = parsedTurn;
       const reasoningContent = providerCodec.shouldStoreReasoningContent(parsedTurn)
         ? parsedTurn.reasoningContent
         : undefined;
 
-      if (!toolCalls) {
-        // If content is empty/whitespace after tool use, nudge model to answer
-        if (contentBuf.trim().length === 0 && loop > 0) {
-          store.appendNudge();
-          persistPending();
-          continue; // one more loop to get actual answer
+      if (finishReason === 'length' && !toolCalls) {
+        yield { type: 'warning', message: 'Model output was truncated (token limit reached). Continuing...' };
+        if (contentBuf.trim().length > 0) {
+          store.appendAssistant(contentBuf, undefined, { reasoningContent });
         }
-        if (looksLikeContextEcho(contentBuf)) {
-          store.appendUser(
-            'Your previous response copied active context markers instead of answering. Do not repeat [tool result i=...] or [i=...] text. If context should change, call context_update. Otherwise answer the user directly from the evidence.'
-          );
+        persistPending();
+        continue;
+      }
+
+      if (!toolCalls) {
+        if (contentBuf.trim().length === 0) {
+          store.appendNudge();
           persistPending();
           continue;
         }
@@ -966,6 +893,16 @@ export async function createAgent(
         break outer;
       }
 
+      if (!signal?.aborted) {
+        const workspaceDiff = diffWorkspaceSnapshots(
+          workspaceBefore,
+          collectWorkspaceSnapshot()
+        );
+        if (workspaceDiff) {
+          yield { type: 'workspace:diff', artifact: workspaceDiff };
+        }
+      }
+
       if (failed) {
         const cleanError = cleanErrorMessage(failMessage);
         stack.markFailed(task.id, cleanError);
@@ -984,16 +921,6 @@ export async function createAgent(
           taskId: task.id,
           next: next ? next.id : undefined,
         };
-      }
-    }
-
-    if (!signal?.aborted) {
-      const workspaceDiff = diffWorkspaceSnapshots(
-        workspaceBefore,
-        collectWorkspaceSnapshot()
-      );
-      if (workspaceDiff) {
-        yield { type: 'workspace:diff', artifact: workspaceDiff };
       }
     }
 

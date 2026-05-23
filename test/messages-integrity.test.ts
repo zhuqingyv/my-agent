@@ -326,7 +326,7 @@ test('messages: tool results are textualized in active context', async () => {
       'original user request must remain active'
     );
     assert.ok(
-      round2.some((m: any) => m.role === 'assistant' && String(m.content).includes('[tool result')),
+      round2.some((m: any) => m.role === 'assistant' && String(m.content).includes('added')),
       'tool result must be represented as active-context text'
     );
     assert.ok(!round2.some((m: any) => m.role === 'tool'), 'raw tool messages must not be sent');
@@ -430,7 +430,7 @@ test('messages: follow-up context preserves root user and textualized tool resul
       'current root user message must remain in active context'
     );
     assert.ok(
-      last.some((m: any) => m.role === 'assistant' && String(m.content).includes('[tool result')),
+      last.some((m: any) => m.role === 'assistant' && String(m.content).includes('added')),
       'prior tool result must be textualized in active context'
     );
     assert.ok(!last.some((m: any) => m.role === 'tool'), 'raw tool protocol messages must not be sent');

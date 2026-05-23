@@ -136,8 +136,8 @@ test('agent chat sends context-manager active context, not full transcript', asy
   }
 });
 
-test('agent chat applies context_update tool instead of XML tail patch', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ma-agent-context-tool-'));
+test('agent chat removes context_update tool, exposes ma ctx CLI', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ma-agent-ctx-cli-'));
   const sessionStore = createSessionStore(dir);
   const sessionId = sessionStore.create({
     createdAt: Date.now(),
@@ -145,38 +145,13 @@ test('agent chat applies context_update tool instead of XML tail patch', async (
     model: 'stub-model',
   });
   const oldMessages = [
-    { role: 'assistant', content: 'verbose tool evidence that should be compressed' },
+    { role: 'user', content: 'hello' },
   ] as any[];
   for (const msg of oldMessages) sessionStore.append(sessionId, msg);
-  const contextManager = createContextManager(sessionId, dir);
-  contextManager.ensureIndexed(oldMessages);
 
   const calls: any[] = [];
   const restore = installOpenAiMockTurns([
-    [
-      {
-        choices: [{
-          delta: {
-            tool_calls: [{
-              index: 0,
-              id: 'ctx_update_1',
-              function: {
-                name: 'context_update',
-                arguments: JSON.stringify({
-                  ops: [{
-                    i: 0,
-                    act: 'edit',
-                    res: 'compressed evidence summary',
-                    reason: 'reduce active context',
-                  }],
-                }),
-              },
-            }],
-          },
-        }],
-      },
-    ],
-    [{ choices: [{ delta: { content: 'final answer' } }] }],
+    [{ choices: [{ delta: { content: 'hi there' } }] }],
   ], calls);
   try {
     const agent = await createAgent(config, [], {
@@ -186,19 +161,61 @@ test('agent chat applies context_update tool instead of XML tail patch', async (
     });
     await drain(agent.chat('new task'));
 
+    // context_update must NOT be in builtin tools
+    const toolNames = calls[0].tools.map((t: any) => t.function?.name);
     assert.ok(
-      calls[0].tools.some((tool: any) => tool.function?.name === 'context_update'),
-      'context_update must be exposed as a builtin tool'
+      !toolNames.includes('context_update'),
+      'context_update tool must be removed from builtin tools'
     );
-    const state = JSON.parse(fs.readFileSync(path.join(dir, `${sessionId}.context.json`), 'utf-8'));
-    const item = state.activeItems.find((active: any) => active.i === 0);
-    assert.equal(item.mode, 'summary');
-    assert.equal(item.content, 'compressed evidence summary');
-    const pool = fs.readFileSync(path.join(dir, `${sessionId}.pool.jsonl`), 'utf-8');
-    assert.match(pool, /verbose tool evidence/);
-    const audit = fs.readFileSync(path.join(dir, `${sessionId}.patch.jsonl`), 'utf-8');
-    assert.match(audit, /"act":"edit"/);
   } finally {
     restore();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('agent: ma ctx CLI commands work with context manager directly', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ma-ctx-direct-'));
+  const sessionStore = createSessionStore(dir);
+  const sessionId = sessionStore.create({
+    createdAt: Date.now(),
+    cwd: process.cwd(),
+    model: 'stub-model',
+  });
+  const cm = createContextManager(sessionId, dir);
+
+  const msgs = [
+    { role: 'user', content: 'important question' },
+    { role: 'assistant', content: 'verbose tool evidence that should be removable' },
+  ];
+  cm.ensureIndexed(msgs);
+  assert.equal(cm.active().length, 2, 'should have 2 active items');
+
+  // ma ctx rm: remove the assistant message
+  const result = cm.drop(1);
+  assert.ok(result.includes('Dropped i=1'), `drop result: ${result}`);
+  assert.equal(cm.active().length, 1, 'should have 1 item after rm');
+
+  // Removed item should be in pool
+  const poolResults = cm.search('verbose tool');
+  assert.ok(poolResults.length >= 1, 'removed item should be in pool');
+
+  // ma ctx search
+  const searchResults = cm.search('important');
+  assert.ok(searchResults.length >= 1, 'search should find indexed items');
+
+  // ma ctx pin
+  const pinResult = cm.pin('critical context');
+  assert.ok(pinResult.includes('Pinned'), `pin result: ${pinResult}`);
+
+  // ma ctx recall
+  const entry = poolResults[0];
+  const recallResult = cm.recall(entry.id);
+  assert.ok(recallResult.includes('Recalled'), `recall result: ${recallResult}`);
+
+  // ma ctx clear
+  const clearResult = cm.clearActive();
+  assert.ok(clearResult.includes('Cleared'), `clear result: ${clearResult}`);
+  assert.equal(cm.active().length, 0, 'should be empty after clear');
+
+  fs.rmSync(dir, { recursive: true, force: true });
 });
